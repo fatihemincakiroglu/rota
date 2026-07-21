@@ -59,6 +59,19 @@ export function countryAt(lng, lat) {
   return null
 }
 
+// ISO2 -> ulkenin sinir geometrisi (GeoJSON Feature) ya da null.
+// Harita uzerinde o ulkeyi vurgulamak icin kullanilir.
+export function countryFeature(iso2) {
+  if (!DATA || !iso2) return null
+  const c = DATA.find((x) => x.iso2 === iso2)
+  if (!c) return null
+  return {
+    type: 'Feature',
+    properties: { iso2 },
+    geometry: { type: c.type, coordinates: c.coordinates },
+  }
+}
+
 // ISO2 -> bayrak emoji (regional indicator sembolleri)
 export function flagEmoji(iso2) {
   if (!iso2 || iso2.length !== 2) return '🏳️'

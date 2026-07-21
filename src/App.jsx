@@ -25,10 +25,7 @@ import { t, fmtNum, LANGS, LANG } from './i18n.js'
 import { LOGO_URL, getLogoImage } from './logo.js'
 import { stampFor, stampSvg } from './stamp.js'
 import { nightPolygon, clockForProgress } from './daynight.js'
-import { loadBorders, countryAt, flagEmoji, countryName } from './borders.js'
-
-// Aktif dilin locale'i (Intl.DisplayNames icin) — ulke adlari bu dile gore
-const LOCALE = (LANGS.find((l) => l.code === LANG) || {}).locale || 'en'
+import { loadBorders, countryAt, countryFeature } from './borders.js'
 
 // Harita temalari (hepsi ucretsiz, anahtar gerektirmez)
 const THEMES = {
@@ -184,7 +181,6 @@ export default function App() {
   const [showStamps, setShowStamps] = useState(true) // damga efekti acik mi
   const [author, setAuthor] = useState('') // video/gorsel cikisina yazilacak ad soyad
   const [dayNight, setDayNight] = useState(false) // gunduz/gece golgesi acik mi
-  const [borderPop, setBorderPop] = useState(null) // ekran ortasi ulke gecis pop-up'i {id, flag, name}
   const curLang = LANGS.find((l) => l.code === LANG) || LANGS[0]
 
   // Ulke sinir verisini arka planda yukle (animasyonda gecis tespiti icin)
@@ -314,6 +310,35 @@ export default function App() {
           'fill-color': '#0a1230',
           'fill-opacity': 0.42,
         },
+      })
+    }
+    if (!map.getSource('country-hl')) {
+      map.addSource('country-hl', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+      // Dolgu — ulke icini parildatir
+      map.addLayer({
+        id: 'country-hl-fill',
+        type: 'fill',
+        source: 'country-hl',
+        paint: {
+          'fill-color': '#FFB547',
+          'fill-opacity': 0, // animasyonla degistirilir
+        },
+      })
+      // Sinir cizgisi — ulke konturunu parildatir
+      map.addLayer({
+        id: 'country-hl-line',
+        type: 'line',
+        source: 'country-hl',
+        paint: {
+          'line-color': '#FFC875',
+          'line-width': 2.5,
+          'line-opacity': 0, // animasyonla degistirilir
+          'line-blur': 0.6,
+        },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
       })
     }
     if (!map.getSource('route-preview')) {
@@ -478,10 +503,17 @@ export default function App() {
     setPlaying(false)
     setCurrentLeg(-1)
     setStamps([]) // ekrandaki damgalari temizle
-    setBorderPop(null) // ulke gecis pop-up'ini temizle
-    if (borderTimerRef.current) clearTimeout(borderTimerRef.current)
-    borderRef.current = null
+    // Ulke vurgusunu durdur ve temizle
+    if (hlRafRef.current) { cancelAnimationFrame(hlRafRef.current); hlRafRef.current = null }
     lastCountryRef.current = null
+    {
+      const m = mapRef.current
+      if (m) {
+        if (m.getLayer('country-hl-fill')) m.setPaintProperty('country-hl-fill', 'fill-opacity', 0)
+        if (m.getLayer('country-hl-line')) m.setPaintProperty('country-hl-line', 'line-opacity', 0)
+        m.getSource('country-hl')?.setData({ type: 'FeatureCollection', features: [] })
+      }
+    }
     updateNight(null) // gece golgesini temizle
     vehicleMarkerRef.current?.remove()
     vehicleMarkerRef.current = null
@@ -535,23 +567,51 @@ export default function App() {
   const stampRef = useRef(null) // video kaydina cizilecek aktif damga {img, born, rotate, left, top}
   const stampImgCacheRef = useRef({}) // svg -> onceden rasterize edilmis Image
 
-  // Ulke gecisi: animasyonda yeni ulkeye girilince ekran ortasi pop-up
+  // Ulke gecisi: animasyonda yeni ulkeye girilince o ulkenin sinirini
+  // harita uzerinde parildatir (yanip sonme). Pop-up yok — haritayla butunlesik.
   const lastCountryRef = useRef(null) // en son icinde olunan ISO2
-  const borderPopIdRef = useRef(0)
-  const borderRef = useRef(null) // video kaydina cizilecek aktif gecis {flag, name, born}
-  const borderTimerRef = useRef(null)
-  function announceCountry(iso2, isStart) {
-    const flag = flagEmoji(iso2)
-    const name = countryName(iso2, LOCALE)
-    const id = ++borderPopIdRef.current
-    setBorderPop({ id, flag, name })
-    // Video kaydi icin aktif gecisi isaretle (capture her karede cizer)
-    borderRef.current = { flag, name, born: performance.now(), id }
-    if (borderTimerRef.current) clearTimeout(borderTimerRef.current)
-    borderTimerRef.current = setTimeout(() => {
-      setBorderPop((cur) => (cur && cur.id === id ? null : cur))
-      if (borderRef.current && borderRef.current.id === id) borderRef.current = null
-    }, 2600)
+  const hlRafRef = useRef(null) // aktif parildatma animasyon frame'i
+  function highlightCountry(iso2) {
+    const map = mapRef.current
+    if (!map) return
+    const feat = countryFeature(iso2)
+    if (!feat) return
+    const src = map.getSource('country-hl')
+    if (!src) return
+    src.setData(feat)
+
+    // Onceki parildatmayi durdur
+    if (hlRafRef.current) cancelAnimationFrame(hlRafRef.current)
+
+    // ~2.4 sn boyunca 2.5 kez yanip sonen dolgu + kontur
+    const DUR = 2400
+    const PULSES = 2.5
+    const FILL_MAX = 0.32
+    const LINE_MAX = 0.95
+    const t0 = performance.now()
+    const tick = (now) => {
+      const p = Math.min(1, (now - t0) / DUR)
+      // Sinuzoidal parildama; genlik sona dogru zarfla soner
+      const envelope = 1 - p // giderek zayifla
+      const wave = (Math.sin(p * Math.PI * 2 * PULSES - Math.PI / 2) + 1) / 2 // 0..1
+      const k = wave * envelope
+      if (map.getLayer('country-hl-fill')) {
+        map.setPaintProperty('country-hl-fill', 'fill-opacity', FILL_MAX * k)
+      }
+      if (map.getLayer('country-hl-line')) {
+        map.setPaintProperty('country-hl-line', 'line-opacity', LINE_MAX * k)
+      }
+      if (p < 1) {
+        hlRafRef.current = requestAnimationFrame(tick)
+      } else {
+        // Bitince temizle
+        if (map.getLayer('country-hl-fill')) map.setPaintProperty('country-hl-fill', 'fill-opacity', 0)
+        if (map.getLayer('country-hl-line')) map.setPaintProperty('country-hl-line', 'line-opacity', 0)
+        src.setData({ type: 'FeatureCollection', features: [] })
+        hlRafRef.current = null
+      }
+    }
+    hlRafRef.current = requestAnimationFrame(tick)
   }
 
   function dropStamp(stop) {
@@ -677,7 +737,7 @@ export default function App() {
       const sub = `${stops[0].name} → ${stops[stops.length - 1].name}`
       // capture.js tembel yuklenir — sadece video/PNG cikisi istendiginde
       const { startRecorder } = await import('./capture.js')
-      recorderRef.current = startRecorder(map, stops, posRef, realTotalKm, format, sub, stampRef, author, borderRef)
+      recorderRef.current = startRecorder(map, stops, posRef, realTotalKm, format, sub, stampRef, author)
       if (!recorderRef.current) {
         alert(t('recorderUnsupported'))
       }
@@ -760,7 +820,7 @@ export default function App() {
         // kara ulkesini koru ki deniz asiri bacaklarda yanlis tetiklenmesin.
         if (iso && iso !== lastCountryRef.current) {
           // Ilk kez bir ulke set ediliyorsa (baslangic null'du) sessizce gec
-          if (lastCountryRef.current !== null) announceCountry(iso)
+          if (lastCountryRef.current !== null) highlightCountry(iso)
           lastCountryRef.current = iso
         }
       }
@@ -1218,12 +1278,6 @@ export default function App() {
           dangerouslySetInnerHTML={{ __html: s.svg }}
         />
       ))}
-      {borderPop && (
-        <div className="border-pop" key={borderPop.id}>
-          <span className="border-flag">{borderPop.flag}</span>
-          <span className="border-name">{borderPop.name}</span>
-        </div>
-      )}
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
