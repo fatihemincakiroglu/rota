@@ -581,6 +581,27 @@ input:focus-visible {
 }
 .toggle input { accent-color: var(--coral); width: 16px; height: 16px; }
 
+/* Ad soyad alani */
+.author-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font: 500 13px var(--sans);
+  color: var(--cream);
+}
+.author-field input {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-2);
+  background: var(--panel-2);
+  color: var(--ink);
+  font: 500 13px var(--sans);
+  outline: none;
+}
+.author-field input::placeholder { color: var(--muted); }
+.author-field input:focus { border-color: var(--coral); }
+.author-field input:disabled { opacity: 0.6; cursor: not-allowed; }
+
 /* Kalkış panosu — meta (hava + saat dilimi) */
 .row-meta {
   display: flex;

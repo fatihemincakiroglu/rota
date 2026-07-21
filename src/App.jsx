@@ -178,6 +178,7 @@ export default function App() {
   const [langOpen, setLangOpen] = useState(false) // dil secici acik mi
   const [stamps, setStamps] = useState([]) // ekranda gorunen pasaport damgalari
   const [showStamps, setShowStamps] = useState(true) // damga efekti acik mi
+  const [author, setAuthor] = useState('') // video/gorsel cikisina yazilacak ad soyad
   const [dayNight, setDayNight] = useState(false) // gunduz/gece golgesi acik mi
   const curLang = LANGS.find((l) => l.code === LANG) || LANGS[0]
 
@@ -644,7 +645,7 @@ export default function App() {
       const sub = `${stops[0].name} → ${stops[stops.length - 1].name}`
       // capture.js tembel yuklenir — sadece video/PNG cikisi istendiginde
       const { startRecorder } = await import('./capture.js')
-      recorderRef.current = startRecorder(map, stops, posRef, realTotalKm, format, sub, stampRef)
+      recorderRef.current = startRecorder(map, stops, posRef, realTotalKm, format, sub, stampRef, author)
       if (!recorderRef.current) {
         alert(t('recorderUnsupported'))
       }
@@ -823,7 +824,7 @@ export default function App() {
     map.fitBounds(b, { padding: 110, duration: 0 })
     const sub = `${stops[0].name} → ${stops[stops.length - 1].name}`
     const { downloadImage } = await import('./capture.js')
-    await downloadImage(map, stops, realTotal, format, sub)
+    await downloadImage(map, stops, realTotal, format, sub, author)
   }
 
   // --- Paylasim & kaydetme ----------------------------------------------
@@ -976,15 +977,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Gidis-donus */}
-        {baseStops.length > 1 && (
-          <label className="toggle">
-            <input type="checkbox" checked={loop} disabled={playing}
-              onChange={(e) => { setLoop(e.target.checked); resetAnimation() }} />
-            <span>{t('roundTrip')}</span>
-          </label>
-        )}
-
         {/* Pasaport damgasi efekti */}
         {baseStops.length > 1 && (
           <label className="toggle">
@@ -994,14 +986,14 @@ export default function App() {
           </label>
         )}
 
-        {/* Gunduz/gece golgesi */}
-        {baseStops.length > 1 && (
-          <label className="toggle">
-            <input type="checkbox" checked={dayNight} disabled={playing}
-              onChange={(e) => setDayNight(e.target.checked)} />
-            <span>{t('dayNight')}</span>
-          </label>
-        )}
+        {/* Ad soyad — video/gorsel cikisina islenir */}
+        <label className="author-field">
+          <span>{t('authorLabel')}</span>
+          <input type="text" value={author} disabled={playing}
+            placeholder={t('authorPlaceholder')}
+            maxLength={40}
+            onChange={(e) => setAuthor(e.target.value)} />
+        </label>
 
         {/* Kalkis panosu — mesafe/sure/saat farki/hava */}
         <div className="board">

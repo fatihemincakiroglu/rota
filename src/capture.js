@@ -187,7 +187,7 @@ function drawTotalLabel(ctx, map, L, stops, totalKm) {
 }
 
 // Sol ust kose: MapBoast logosu + toplam mesafe (+ istege bagli alt bilgi)
-function drawBadge(ctx, L, totalKm, subtitle) {
+function drawBadge(ctx, L, totalKm, subtitle, author = '') {
   const k = L.k
   const pad = 14 * k
 
@@ -231,11 +231,13 @@ function drawBadge(ctx, L, totalKm, subtitle) {
     ctx.fillText(subtitle, pad + 2 * k, cursorY)
     cursorY += 16 * k
   }
-  // Yazar imzasi
-  ctx.font = `500 ${10 * k}px "IBM Plex Mono", monospace`
-  ctx.fillStyle = 'rgba(74,63,58,0.6)'
-  ctx.textAlign = 'left'
-  ctx.fillText('Fatih Emin Çakıroğlu', pad + 2 * k, cursorY)
+  // Yazar imzasi (kullanicidan alinan ad soyad; bos ise cizme)
+  if (author && author.trim()) {
+    ctx.font = `500 ${10 * k}px "IBM Plex Mono", monospace`
+    ctx.fillStyle = 'rgba(74,63,58,0.6)'
+    ctx.textAlign = 'left'
+    ctx.fillText(author.trim(), pad + 2 * k, cursorY)
+  }
 }
 
 // Aktif pasaport damgasini canvas'a cizer — ekrandaki CSS animasyonuna
@@ -284,7 +286,7 @@ function waitIdle(map) {
 }
 
 // Rotanin PNG gorselini indirir (secilen formatta)
-export async function downloadImage(map, stops, totalKm, formatId = 'landscape', subtitle = '') {
+export async function downloadImage(map, stops, totalKm, formatId = 'landscape', subtitle = '', author = '') {
   await waitIdle(map)
   const L = layoutFor(map, FORMATS[formatId] || FORMATS.landscape)
   const out = document.createElement('canvas')
@@ -295,7 +297,7 @@ export async function downloadImage(map, stops, totalKm, formatId = 'landscape',
   ctx.fillRect(0, 0, out.width, out.height)
   L.drawMap(ctx)
   drawOverlays(ctx, map, L, stops, null)
-  drawBadge(ctx, L, totalKm, subtitle)
+  drawBadge(ctx, L, totalKm, subtitle, author)
   drawTotalLabel(ctx, map, L, stops, totalKm)
   const suffix = formatId === 'landscape' ? '' : `-${FORMATS[formatId].label.replace(':', 'x')}`
   out.toBlob((b) => b && saveBlob(b, `mapboast${suffix}.png`), 'image/png')
@@ -313,7 +315,7 @@ function pickMime() {
 
 // Animasyon boyunca kayit: her karede harita + pinler + arac birlestirilir.
 // formatId secilen en-boy oranini belirler (9:16, 1:1, 4:5, yatay).
-export function startRecorder(map, stops, posRef, totalKm, formatId = 'landscape', subtitle = '', stampRef = null) {
+export function startRecorder(map, stops, posRef, totalKm, formatId = 'landscape', subtitle = '', stampRef = null, author = '') {
   if (!window.MediaRecorder) return null
   const mime = pickMime()
   const L = layoutFor(map, FORMATS[formatId] || FORMATS.landscape)
@@ -344,7 +346,7 @@ export function startRecorder(map, stops, posRef, totalKm, formatId = 'landscape
     ctx.fillRect(0, 0, rec.width, rec.height)
     L.drawMap(ctx)
     drawOverlays(ctx, map, L, stops, posRef.current)
-    drawBadge(ctx, L, totalKm, subtitle)
+    drawBadge(ctx, L, totalKm, subtitle, author)
     // Rota bitince kirmizi cizginin uzerine toplam km
     if (posRef.current?.done) {
       drawTotalLabel(ctx, map, L, stops, totalKm)
