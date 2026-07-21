@@ -344,14 +344,16 @@ html, body, #root {
 .stop-pin {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: 5px;
+  padding: 4px 8px 4px 5px;
   background: rgba(11, 17, 32, 0.9);
   border: 1px solid var(--amber);
   border-radius: 999px;
-  font: 600 11.5px var(--mono);
+  font: 700 12px var(--mono);
+  letter-spacing: 0.5px;
   color: var(--cream);
   transform: translateY(-6px);
+  white-space: nowrap;
 }
 .stop-pin-num {
   display: inline-flex;
@@ -593,8 +595,8 @@ input:focus-visible {
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--panel-2);
-  background: var(--panel-2);
-  color: var(--ink);
+  background: var(--panel);
+  color: var(--cream);
   font: 500 13px var(--sans);
   outline: none;
 }

@@ -58,6 +58,21 @@ const VEHICLES = [
 ]
 const vById = (id) => VEHICLES.find((v) => v.id === id) || VEHICLES[0]
 
+// Sehir adindan 3 harfli kisaltma (harita etiketi icin).
+// Turkce karakterleri ASCII'ye indirger, ilk 3 harfi buyuk dondurur.
+// Cok kelimeli adlarda bas harfleri alir (ornegin "New York" -> "NYO" degil,
+// "New York" -> ilk kelimenin ilk 3 harfi mantikli: "NEW"). Basit ve okunakli.
+function shortLabel(name) {
+  if (!name) return '???'
+  const map = { 'ı': 'i', 'İ': 'i', 'ş': 's', 'Ş': 's', 'ğ': 'g', 'Ğ': 'g',
+    'ü': 'u', 'Ü': 'u', 'ö': 'o', 'Ö': 'o', 'ç': 'c', 'Ç': 'c' }
+  const ascii = name.replace(/[ıİşŞğĞüÜöÖçÇ]/g, (c) => map[c] || c)
+  // Yalnizca harfleri tut, ilk 3'unu al
+  const letters = ascii.replace(/[^A-Za-z]/g, '')
+  return (letters.slice(0, 3) || ascii.slice(0, 3)).toUpperCase()
+}
+
+
 // Hiz kademeleri: sure carpani (kucuk = hizli)
 const SPEEDS = [
   { id: 0.5, label: t('speedSlow') },
@@ -435,7 +450,8 @@ export default function App() {
       const tag = i === 0 ? t('tagDep') : isLast ? t('tagArr') : t('tagVia')
       const el = document.createElement('div')
       el.className = 'stop-pin'
-      el.innerHTML = `<span class="stop-pin-num">${tag}</span><span class="stop-pin-name">${s.name}</span>`
+      el.title = s.name // tam ad: uzerine gelince ipucu
+      el.innerHTML = `<span class="stop-pin-num">${tag}</span><span class="stop-pin-name">${shortLabel(s.name)}</span>`
       return new maplibregl.Marker({ element: el, anchor: 'bottom' })
         .setLngLat([s.lng, s.lat])
         .addTo(map)
