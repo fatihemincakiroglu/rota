@@ -278,6 +278,74 @@ function drawStamp(ctx, L, s) {
   ctx.restore()
 }
 
+// Aktif ulke gecisi pop-up'ini canvas'a cizer — DOM'daki .border-pop ile
+// ayni his: hizli buyuyerek belirir, plato, sonra solar. b: { flag, name, born }
+function drawBorderPop(ctx, L, b) {
+  const now = performance.now()
+  const age = now - b.born
+  const LIFE = 2600
+  if (age > LIFE) return
+  const p = age / LIFE
+
+  let alpha
+  if (p < 0.1) alpha = p / 0.1
+  else if (p < 0.82) alpha = 1
+  else alpha = Math.max(0, (1 - p) / 0.18)
+
+  let scale
+  if (p < 0.1) scale = 0.6 + (1.08 - 0.6) * (p / 0.1)
+  else if (p < 0.16) scale = 1.08 - (1.08 - 1) * ((p - 0.1) / 0.06)
+  else scale = 1
+
+  const k = L.k
+  const cx = L.outW / 2
+  const cy = L.outH * 0.42
+
+  const flagSize = 68 * k
+  const nameSize = 22 * k
+  const gap = 6 * k
+  const padX = 30 * k
+  const padY = 18 * k
+
+  ctx.save()
+  ctx.globalAlpha = alpha
+  ctx.translate(cx, cy)
+  ctx.scale(scale, scale)
+
+  // Metin genisligini olc (kutu boyutu icin)
+  ctx.font = `700 ${nameSize}px "Space Grotesk", system-ui, sans-serif`
+  const nameW = ctx.measureText(b.name || '').width
+  const boxW = Math.max(flagSize, nameW) + padX * 2
+  const boxH = flagSize + gap + nameSize + padY * 2
+
+  // Arka plan (yuvarlak, koyu, hafif kenarlik)
+  ctx.fillStyle = 'rgba(24,18,15,0.72)'
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)'
+  ctx.lineWidth = 1 * k
+  ctx.shadowColor = 'rgba(0,0,0,0.4)'
+  ctx.shadowBlur = 40 * k
+  ctx.shadowOffsetY = 12 * k
+  roundRect(ctx, -boxW / 2, -boxH / 2, boxW, boxH, 18 * k)
+  ctx.fill()
+  ctx.shadowColor = 'transparent'
+  ctx.stroke()
+
+  // Bayrak emoji (ustte, ortali)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  ctx.font = `${flagSize}px "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", sans-serif`
+  ctx.fillStyle = '#fff'
+  ctx.fillText(b.flag || '🏳️', 0, -boxH / 2 + padY)
+
+  // Ulke adi (altta)
+  ctx.font = `700 ${nameSize}px "Space Grotesk", system-ui, sans-serif`
+  ctx.fillStyle = '#fff'
+  ctx.textBaseline = 'top'
+  ctx.fillText(b.name || '', 0, -boxH / 2 + padY + flagSize + gap)
+
+  ctx.restore()
+}
+
 function waitIdle(map) {
   return new Promise((resolve) => {
     map.once('idle', resolve)
@@ -315,7 +383,7 @@ function pickMime() {
 
 // Animasyon boyunca kayit: her karede harita + pinler + arac birlestirilir.
 // formatId secilen en-boy oranini belirler (9:16, 1:1, 4:5, yatay).
-export function startRecorder(map, stops, posRef, totalKm, formatId = 'landscape', subtitle = '', stampRef = null, author = '') {
+export function startRecorder(map, stops, posRef, totalKm, formatId = 'landscape', subtitle = '', stampRef = null, author = '', borderRef = null) {
   if (!window.MediaRecorder) return null
   const mime = pickMime()
   const L = layoutFor(map, FORMATS[formatId] || FORMATS.landscape)
@@ -353,6 +421,8 @@ export function startRecorder(map, stops, posRef, totalKm, formatId = 'landscape
     }
     // Aktif pasaport damgasi (varista dusen) — ekrandaki DOM ile ayni his
     if (stampRef?.current?.img) drawStamp(ctx, L, stampRef.current)
+    // Aktif ulke gecisi pop-up'i (ekran ortasi bayrak + ad)
+    if (borderRef?.current) drawBorderPop(ctx, L, borderRef.current)
     requestAnimationFrame(copy)
   }
   recorder.start(200)

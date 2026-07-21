@@ -25,6 +25,10 @@ import { t, fmtNum, LANGS, LANG } from './i18n.js'
 import { LOGO_URL, getLogoImage } from './logo.js'
 import { stampFor, stampSvg } from './stamp.js'
 import { nightPolygon, clockForProgress } from './daynight.js'
+import { loadBorders, countryAt, flagEmoji, countryName } from './borders.js'
+
+// Aktif dilin locale'i (Intl.DisplayNames icin) — ulke adlari bu dile gore
+const LOCALE = (LANGS.find((l) => l.code === LANG) || {}).locale || 'en'
 
 // Harita temalari (hepsi ucretsiz, anahtar gerektirmez)
 const THEMES = {
@@ -180,7 +184,11 @@ export default function App() {
   const [showStamps, setShowStamps] = useState(true) // damga efekti acik mi
   const [author, setAuthor] = useState('') // video/gorsel cikisina yazilacak ad soyad
   const [dayNight, setDayNight] = useState(false) // gunduz/gece golgesi acik mi
+  const [borderPop, setBorderPop] = useState(null) // ekran ortasi ulke gecis pop-up'i {id, flag, name}
   const curLang = LANGS.find((l) => l.code === LANG) || LANGS[0]
+
+  // Ulke sinir verisini arka planda yukle (animasyonda gecis tespiti icin)
+  useEffect(() => { loadBorders() }, [])
 
   // Dil menusu: disari tiklaninca kapat
   useEffect(() => {
@@ -470,6 +478,10 @@ export default function App() {
     setPlaying(false)
     setCurrentLeg(-1)
     setStamps([]) // ekrandaki damgalari temizle
+    setBorderPop(null) // ulke gecis pop-up'ini temizle
+    if (borderTimerRef.current) clearTimeout(borderTimerRef.current)
+    borderRef.current = null
+    lastCountryRef.current = null
     updateNight(null) // gece golgesini temizle
     vehicleMarkerRef.current?.remove()
     vehicleMarkerRef.current = null
@@ -522,6 +534,26 @@ export default function App() {
   const stampIdRef = useRef(0)
   const stampRef = useRef(null) // video kaydina cizilecek aktif damga {img, born, rotate, left, top}
   const stampImgCacheRef = useRef({}) // svg -> onceden rasterize edilmis Image
+
+  // Ulke gecisi: animasyonda yeni ulkeye girilince ekran ortasi pop-up
+  const lastCountryRef = useRef(null) // en son icinde olunan ISO2
+  const borderPopIdRef = useRef(0)
+  const borderRef = useRef(null) // video kaydina cizilecek aktif gecis {flag, name, born}
+  const borderTimerRef = useRef(null)
+  function announceCountry(iso2, isStart) {
+    const flag = flagEmoji(iso2)
+    const name = countryName(iso2, LOCALE)
+    const id = ++borderPopIdRef.current
+    setBorderPop({ id, flag, name })
+    // Video kaydi icin aktif gecisi isaretle (capture her karede cizer)
+    borderRef.current = { flag, name, born: performance.now(), id }
+    if (borderTimerRef.current) clearTimeout(borderTimerRef.current)
+    borderTimerRef.current = setTimeout(() => {
+      setBorderPop((cur) => (cur && cur.id === id ? null : cur))
+      if (borderRef.current && borderRef.current.id === id) borderRef.current = null
+    }, 2600)
+  }
+
   function dropStamp(stop) {
     if (!showStamps || !stop) return
     const data = stampFor(stop)
@@ -645,7 +677,7 @@ export default function App() {
       const sub = `${stops[0].name} → ${stops[stops.length - 1].name}`
       // capture.js tembel yuklenir — sadece video/PNG cikisi istendiginde
       const { startRecorder } = await import('./capture.js')
-      recorderRef.current = startRecorder(map, stops, posRef, realTotalKm, format, sub, stampRef, author)
+      recorderRef.current = startRecorder(map, stops, posRef, realTotalKm, format, sub, stampRef, author, borderRef)
       if (!recorderRef.current) {
         alert(t('recorderUnsupported'))
       }
@@ -659,6 +691,11 @@ export default function App() {
     const start = performance.now() + 650
     let lastLeg = 0
     let finished = false
+
+    // Ulke gecisi takibi: baslangic noktasinin ulkesini sessizce kaydet
+    // (baslangicta pop-up gostermeyiz; ilk gecisten itibaren gosteririz)
+    lastCountryRef.current = countryAt(legs[0].coords[0][0], legs[0].coords[0][1])
+    let borderThrottle = 0
 
     // Gunduz/gece icin: toplam animasyon suresi + baslangic saati (simdi)
     const totalDur =
@@ -713,6 +750,20 @@ export default function App() {
       progressSrc?.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: drawn } })
 
       marker.setLngLat([p.lng, p.lat])
+
+      // Ulke gecisi tespiti (~3fps ile; nokta-poligon testi maliyetli).
+      // Bekleme (dwell) sirasinda atlanir; araci gercekten hareket ederken bakariz.
+      if (!dwelling && now - borderThrottle > 320) {
+        borderThrottle = now
+        const iso = countryAt(p.lng, p.lat)
+        // Denizde/veri disinda iso null olur — o zaman "gecis yok" say, son
+        // kara ulkesini koru ki deniz asiri bacaklarda yanlis tetiklenmesin.
+        if (iso && iso !== lastCountryRef.current) {
+          // Ilk kez bir ulke set ediliyorsa (baslangic null'du) sessizce gec
+          if (lastCountryRef.current !== null) announceCountry(iso)
+          lastCountryRef.current = iso
+        }
+      }
 
       // Kat edilen mesafe: on-hesaplanmis prefix + mevcut bacagin orani.
       // Panel gostergesi ayri bir LiveDistance bileseni tarafindan posRef'ten
@@ -1167,6 +1218,12 @@ export default function App() {
           dangerouslySetInnerHTML={{ __html: s.svg }}
         />
       ))}
+      {borderPop && (
+        <div className="border-pop" key={borderPop.id}>
+          <span className="border-flag">{borderPop.flag}</span>
+          <span className="border-name">{borderPop.name}</span>
+        </div>
+      )}
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
