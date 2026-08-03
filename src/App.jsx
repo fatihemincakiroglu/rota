@@ -29,15 +29,15 @@ import { loadBorders, countryAt, countryFeature } from './borders.js'
 
 // Harita temalari (hepsi ucretsiz, anahtar gerektirmez)
 const THEMES = {
+  liberty: {
+    id: 'liberty',
+    label: t('themeColorful'),
+    style: 'https://tiles.openfreemap.org/styles/liberty',
+  },
   voyager: {
     id: 'voyager',
     label: t('themeVoyager'),
     style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
-  },
-  light: {
-    id: 'light',
-    label: t('themeLight'),
-    style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
   },
   dark: {
     id: 'dark',
@@ -45,6 +45,9 @@ const THEMES = {
     style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
   },
 }
+// Bilinmeyen/eski tema id'leri (or. kaldirilan 'light') varsayilana duser —
+// eski paylasim linkleri kirilmaz.
+const themeCfg = (id) => THEMES[id] || THEMES.liberty
 
 const VEHICLES = [
   // faces: emojinin dogal olarak baktigi aci (ekran, kuzey=0 saat yonu)
@@ -183,7 +186,7 @@ export default function App() {
   const [playing, setPlaying] = useState(false)
   const [currentLeg, setCurrentLeg] = useState(-1)
 
-  const [theme, setTheme] = useState('voyager')
+  const [theme, setTheme] = useState('liberty')
   const [format, setFormat] = useState('landscape')
   const [speed, setSpeed] = useState(1)
   const [loop, setLoop] = useState(false)
@@ -295,7 +298,7 @@ export default function App() {
     getLogoImage() // logoyu onceden yukle (video/PNG cizimi icin hazir olsun)
     const map = new maplibregl.Map({
       container: mapContainer.current,
-      style: THEMES[theme].style,
+      style: themeCfg(theme).style,
       center: [29, 41],
       zoom: 3.2,
       preserveDrawingBuffer: true,
@@ -399,7 +402,7 @@ export default function App() {
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    map.setStyle(THEMES[theme].style)
+    map.setStyle(themeCfg(theme).style)
     map.once('styledata', () => {
       addRouteLayers(map)
       redrawPreview()
@@ -490,7 +493,7 @@ export default function App() {
     setArrival(r.stops.length > 1 ? r.stops[r.stops.length - 1] : null)
     setMidStops(r.stops.slice(1, -1))
     setLegVehicles(r.legVehicles || [])
-    setTheme(r.theme || 'voyager')
+    setTheme(themeCfg(r.theme).id)
     setLoop(!!r.loop)
     setSpeed(r.speed || 1)
   }
