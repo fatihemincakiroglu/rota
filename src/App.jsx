@@ -73,11 +73,12 @@ function shortLabel(name) {
 }
 
 
-// Hiz kademeleri: sure carpani (kucuk = hizli)
+// Hiz kademeleri: id = SURE carpani (kucuk carpan = kisa sure = hizli animasyon).
+// Not: eski surumde etiketler tersti (Yavas 0.5x sureyle hizlaniyordu) — duzeltildi.
 const SPEEDS = [
-  { id: 0.5, label: t('speedSlow') },
+  { id: 2, label: t('speedSlow') },
   { id: 1, label: t('speedNormal') },
-  { id: 2, label: t('speedFast') },
+  { id: 0.5, label: t('speedFast') },
 ]
 
 const DWELL = 750 // duraklarda bekleme (ms)
@@ -457,9 +458,6 @@ export default function App() {
         .addTo(map)
     })
 
-    if (map.isStyleLoaded()) redrawPreview()
-    else map.once('load', redrawPreview)
-
     if (stops.length > 1 && !playing) {
       const b = new maplibregl.LngLatBounds()
       stops.forEach((s) => b.extend([s.lng, s.lat]))
@@ -467,6 +465,15 @@ export default function App() {
     } else if (stops.length === 1) {
       map.easeTo({ center: [stops[0].lng, stops[0].lat], zoom: 6, duration: 800 })
     }
+  }, [stops, loop]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Onizleme cizimi ayri efekt: OSRM yol geometrisi geldikce (roadVersion)
+  // yalnizca cizgi tazelenir — kamera/fitBounds TEKRAR tetiklenmez.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    if (map.isStyleLoaded()) redrawPreview()
+    else map.once('load', redrawPreview)
   }, [stops, legVehicles, loop, roadVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- URL'den rota yukleme (ilk acilis) ---------------------------------
@@ -489,11 +496,15 @@ export default function App() {
   }
 
   // --- Hava durumu (Open-Meteo, anahtarsiz) ------------------------------
+  // Istenen anahtarlar ref'te tutulur: efekt icindeki `weather` degeri bayat
+  // olabilecegi icin ayni durak icin cift istek atilmasini onler.
+  const weatherReqRef = useRef(new Set())
   useEffect(() => {
     const uniqueStops = loop && stops.length > 1 ? stops.slice(0, -1) : stops
     uniqueStops.forEach((s) => {
       const k = key(s)
-      if (weather[k]) return
+      if (weatherReqRef.current.has(k)) return
+      weatherReqRef.current.add(k)
       setWeather((w) => ({ ...w, [k]: 'loading' }))
       fetch(
         `https://api.open-meteo.com/v1/forecast?latitude=${s.lat}&longitude=${s.lng}&current=temperature_2m,weather_code`
@@ -506,7 +517,10 @@ export default function App() {
             [k]: c ? { t: Math.round(c.temperature_2m), code: c.weather_code } : null,
           }))
         })
-        .catch(() => setWeather((w) => ({ ...w, [k]: null })))
+        .catch(() => {
+          weatherReqRef.current.delete(k) // ag hatasi: sonraki eklemede tekrar dene
+          setWeather((w) => ({ ...w, [k]: null }))
+        })
     })
   }, [stops, loop]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -975,7 +989,7 @@ export default function App() {
     const def = `${baseStops[0].name} → ${baseStops[baseStops.length - 1].name}`
     const name = window.prompt(t('routeNamePrompt'), def)
     if (name === null) return
-    const list = saveRoute(name, currentState())
+    saveRoute(name, currentState())
     setSaved(loadSaved())
     showToast(t('toastRouteSaved'))
   }
@@ -1226,7 +1240,7 @@ export default function App() {
             <span className="opt-label">{t('mapLabel')}</span>
             <div className="seg">
               {Object.values(THEMES).map((t) => (
-                <button key={t.id} className={theme === t.id ? 'on' : ''} onClick={() => setTheme(t.id)}>{t.label}</button>
+                <button key={t.id} className={theme === t.id ? 'on' : ''} disabled={playing} onClick={() => setTheme(t.id)}>{t.label}</button>
               ))}
             </div>
           </div>
@@ -1242,7 +1256,7 @@ export default function App() {
             <span className="opt-label">{t('formatLabel')}</span>
             <div className="seg">
               {Object.values(FORMATS).map((f) => (
-                <button key={f.id} className={format === f.id ? 'on' : ''} onClick={() => setFormat(f.id)}>{f.label}</button>
+                <button key={f.id} className={format === f.id ? 'on' : ''} disabled={playing} onClick={() => setFormat(f.id)}>{f.label}</button>
               ))}
             </div>
           </div>

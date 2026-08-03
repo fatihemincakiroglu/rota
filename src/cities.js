@@ -105,6 +105,56 @@ export const CITIES = [
   { name: 'Buenos Aires', full: 'Buenos Aires, Arjantin', lat: -34.6037, lng: -58.3816 },
 ]
 
+// Turkce ad -> Ingilizce/yerel alternatifler. Liste Turkce yazildigindan,
+// EN/DE/FR... sayfalarinda "London" ya da "München" yazan kullanici da
+// yerlesik listeden ANINDA sonuc alsin (Nominatim'i beklemesin).
+const ALIASES = {
+  'Londra': ['London'],
+  'Münih': ['Munich', 'München'],
+  'Roma': ['Rome'],
+  'Milano': ['Milan'],
+  'Venedik': ['Venice', 'Venezia'],
+  'Barselona': ['Barcelona'],
+  'Lizbon': ['Lisbon', 'Lisboa'],
+  'Brüksel': ['Brussels', 'Bruxelles'],
+  'Viyana': ['Vienna', 'Wien'],
+  'Zürih': ['Zurich'],
+  'Cenevre': ['Geneva', 'Genève'],
+  'Prag': ['Prague', 'Praha'],
+  'Budapeşte': ['Budapest'],
+  'Varşova': ['Warsaw', 'Warszawa'],
+  'Atina': ['Athens'],
+  'Selanik': ['Thessaloniki'],
+  'Sofya': ['Sofia'],
+  'Bükreş': ['Bucharest', 'București'],
+  'Belgrad': ['Belgrade', 'Beograd'],
+  'Saraybosna': ['Sarajevo'],
+  'Üsküp': ['Skopje'],
+  'Tiran': ['Tirana'],
+  'Stokholm': ['Stockholm'],
+  'Kopenhag': ['Copenhagen', 'København'],
+  'Moskova': ['Moscow', 'Москва'],
+  'Kiev': ['Kyiv', 'Київ'],
+  'Abu Dabi': ['Abu Dhabi'],
+  'Riyad': ['Riyadh'],
+  'Mekke': ['Mecca', 'Makkah'],
+  'Medine': ['Medina'],
+  'Tahran': ['Tehran'],
+  'Bakü': ['Baku'],
+  'Tiflis': ['Tbilisi'],
+  'Kahire': ['Cairo'],
+  'Marakeş': ['Marrakesh', 'Marrakech'],
+  'Kazablanka': ['Casablanca'],
+  'Pekin': ['Beijing'],
+  'Şanghay': ['Shanghai'],
+  'Singapur': ['Singapore'],
+  'Seul': ['Seoul'],
+  'Yeni Delhi': ['New Delhi', 'Delhi'],
+  'Sidney': ['Sydney'],
+  'Meksiko': ['Mexico City', 'Ciudad de México'],
+  'Kapadokya': ['Cappadocia'],
+}
+
 // Turkce karakterleri sadelestirerek esnek eslesme saglar (istanbul = İstanbul)
 export function fold(s) {
   return s
@@ -120,9 +170,9 @@ export function searchLocal(q, limit = 5) {
   const starts = []
   const contains = []
   for (const c of CITIES) {
-    const n = fold(c.name)
-    if (n.startsWith(f)) starts.push(c)
-    else if (n.includes(f) || fold(c.full).includes(f)) contains.push(c)
+    const names = [c.name, ...(ALIASES[c.name] || [])].map(fold)
+    if (names.some((n) => n.startsWith(f))) starts.push(c)
+    else if (names.some((n) => n.includes(f)) || fold(c.full).includes(f)) contains.push(c)
   }
   return [...starts, ...contains].slice(0, limit)
 }

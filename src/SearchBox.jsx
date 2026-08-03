@@ -15,11 +15,13 @@ export default function SearchBox({
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const timer = useRef(null)
+  const abortRef = useRef(null) // uctaki Nominatim istegi — yeni sorguda iptal
 
   // Yerlesik listeden aninda sonuc + Nominatim'den ek sonuclar
   useEffect(() => {
     const query = q.trim()
     clearTimeout(timer.current)
+    abortRef.current?.abort() // onceki istek hala ucuyorsa iptal (yaris durumu)
     if (query.length < 2) {
       setResults([])
       setLoading(false)
@@ -29,13 +31,16 @@ export default function SearchBox({
     setResults(local)
 
     timer.current = setTimeout(async () => {
+      const ctrl = new AbortController()
+      abortRef.current = ctrl
       setLoading(true)
       try {
         const url =
           `https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=${LANG}&q=` +
           encodeURIComponent(query)
-        const res = await fetch(url)
+        const res = await fetch(url, { signal: ctrl.signal })
         const data = await res.json()
+        if (ctrl.signal.aborted) return // bayat yanit — yeni sorguya karisma
         const remote = data.map((d) => ({
           name: d.display_name.split(',')[0],
           full: d.display_name,
@@ -55,12 +60,15 @@ export default function SearchBox({
           return merged.slice(0, 6)
         })
       } catch {
-        // Servis yanit vermezse yerel sonuclar zaten ekranda
+        // Servis yanit vermezse / istek iptal edildiyse yerel sonuclar zaten ekranda
       } finally {
-        setLoading(false)
+        if (abortRef.current === ctrl) setLoading(false)
       }
     }, 400)
-    return () => clearTimeout(timer.current)
+    return () => {
+      clearTimeout(timer.current)
+      abortRef.current?.abort()
+    }
   }, [q])
 
   function pick(r) {
