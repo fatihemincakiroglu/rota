@@ -794,3 +794,43 @@ input:focus-visible {
 }
 .bend-handle:hover { transform: scale(1.2); }
 .bend-handle:active { cursor: grabbing; transform: scale(1.25); }
+
+/* Kalkis rozeti: yesil (varsayilan amber'dan ayrisir) */
+.stop-pin.departure { border-color: #3fbf7f; }
+.stop-pin.departure .stop-pin-num { background: #3fbf7f; color: #062015; }
+
+/* Varis: kullanicinin konum ikonu — surekli hafif ziplar */
+.arrival-pin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.arrival-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px 4px 5px;
+  background: rgba(11, 17, 32, 0.9);
+  border: 1px solid #FF6B5B;
+  border-radius: 999px;
+  font: 700 12px var(--mono);
+  letter-spacing: 0.5px;
+  color: var(--cream);
+  white-space: nowrap;
+}
+.stop-pin-num.arr { background: #FF6B5B; color: #2b0d08; }
+.arrival-img {
+  display: block;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+  animation: arrival-bounce 1.15s ease-in-out infinite;
+}
+@keyframes arrival-bounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-9px) scale(1.04); }
+  60% { transform: translateY(-9px) scale(1.04); }
+}
+.arrival-pin.arrived .arrival-img { animation: pin-pop 0.9s cubic-bezier(0.34, 1.56, 0.64, 1), arrival-bounce 1.15s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .arrival-img { animation: none; }
+}

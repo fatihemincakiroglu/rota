@@ -24,6 +24,7 @@ import {
 } from './share.js'
 import { t, fmtNum, LANGS, LANG } from './i18n.js'
 import { LOGO_URL, getLogoImage } from './logo.js'
+import { getPinImage } from './pin.js'
 import { stampFor, stampSvg } from './stamp.js'
 import { nightPolygon, clockForProgress } from './daynight.js'
 import { loadBorders, countryAt, countryFeature } from './borders.js'
@@ -342,6 +343,7 @@ export default function App() {
     // ikinci WebGL context'ini kurma.
     if (mapRef.current || !mapContainer.current) return
     getLogoImage() // logoyu onceden yukle (video/PNG cizimi icin hazir olsun)
+    getPinImage() // varis pini gorselini de onceden yukle
     let disposed = false // StrictMode/unmount: stil beklerken sokulduysek kurma
     ;(async () => {
       const style = await resolveStyle(theme)
@@ -511,9 +513,18 @@ export default function App() {
       const isLast = i === uniqueStops.length - 1 && uniqueStops.length > 1 && !loop
       const tag = i === 0 ? t('tagDep') : isLast ? t('tagArr') : t('tagVia')
       const el = document.createElement('div')
-      el.className = 'stop-pin'
       el.title = s.name // tam ad: uzerine gelince ipucu
-      el.innerHTML = `<span class="stop-pin-num">${tag}</span><span class="stop-pin-name">${shortLabel(s.name)}</span>`
+      if (isLast) {
+        // VARIS: ziplayan konum pini + ustunde sehir etiketi
+        el.className = 'arrival-pin'
+        el.innerHTML =
+          `<span class="arrival-label"><span class="stop-pin-num arr">${tag}</span>${shortLabel(s.name)}</span>` +
+          `<img class="arrival-img" src="/pin-arrival.png" alt="" width="44" height="44" />`
+      } else {
+        // KALKIS yesil rozetle ayrisir; ara duraklar amber kalir
+        el.className = 'stop-pin' + (i === 0 ? ' departure' : '')
+        el.innerHTML = `<span class="stop-pin-num">${tag}</span><span class="stop-pin-name">${shortLabel(s.name)}</span>`
+      }
       return new maplibregl.Marker({ element: el, anchor: 'bottom' })
         .setLngLat([s.lng, s.lat])
         .addTo(map)

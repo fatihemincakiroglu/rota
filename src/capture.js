@@ -4,6 +4,7 @@
 
 import { t, fmtNum } from './i18n.js'
 import { getLogoImage, logoReady } from './logo.js'
+import { getPinImage, pinReady } from './pin.js'
 import { FORMATS } from './formats.js'
 
 // FORMATS artik formats.js'te; geriye donuk uyumluluk icin yeniden disari ver
@@ -65,11 +66,49 @@ function saveBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000)
 }
 
-// Durak pinleri + arac emojisini 2D tuvale cizer
+// Durak pinleri + arac emojisini 2D tuvale cizer.
+// Son durak (gidis-donus degilse) ekrandaki gibi konum pini olarak cizilir.
 function drawOverlays(ctx, map, L, stops, vehiclePos) {
   const k = L.k
 
-  stops.forEach((s) => {
+  // Gidis-donus mu? Son durak baslangicla ayni noktaysa varis pini cizilmez.
+  const isLoop =
+    stops.length > 1 &&
+    Math.abs(stops[0].lat - stops[stops.length - 1].lat) < 1e-6 &&
+    Math.abs(stops[0].lng - stops[stops.length - 1].lng) < 1e-6
+
+  stops.forEach((s, si) => {
+    // --- VARIS: kullanicinin konum ikonu (hafif ziplama ile) ---
+    if (!isLoop && si === stops.length - 1 && stops.length > 1 && pinReady()) {
+      const pr0 = map.project([s.lng, s.lat])
+      const pt = L.project(pr0.x, pr0.y)
+      const pinH = 52 * k
+      const bob = Math.abs(Math.sin(performance.now() / 340)) * 7 * k // videoda da zipla
+      ctx.save()
+      ctx.shadowColor = 'rgba(0,0,0,0.3)'
+      ctx.shadowBlur = 8 * k
+      ctx.drawImage(getPinImage(), pt.x - pinH / 2, pt.y - pinH - bob, pinH, pinH)
+      ctx.restore()
+      // Sehir etiketi pinin ustunde
+      const label = s.name
+      ctx.font = `600 ${12.5 * k}px "IBM Plex Mono", monospace`
+      const tw = ctx.measureText(label).width
+      const h = 24 * k
+      const w = tw + 22 * k
+      const rx = pt.x - w / 2
+      const ry = pt.y - pinH - bob - h - 6 * k
+      roundRect(ctx, rx, ry, w, h, h / 2)
+      ctx.fillStyle = 'rgba(11,17,32,0.92)'
+      ctx.fill()
+      ctx.strokeStyle = '#FF6B5B'
+      ctx.lineWidth = 1.5 * k
+      ctx.stroke()
+      ctx.fillStyle = '#F2EDE3'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(label, pt.x, ry + h / 2 + 1 * k)
+      return
+    }
     const pr = map.project([s.lng, s.lat])
     const { x, y } = L.project(pr.x, pr.y)
     const label = s.name
