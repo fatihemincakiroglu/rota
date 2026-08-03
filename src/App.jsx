@@ -11,6 +11,7 @@ import {
   hourDiff,
   usesRoads,
   fetchRoadLeg,
+  bendPath,
 } from './geo.js'
 import { FORMATS } from './formats.js'
 import {
@@ -27,6 +28,7 @@ import { stampFor, stampSvg } from './stamp.js'
 import { nightPolygon, clockForProgress } from './daynight.js'
 import { loadBorders, countryAt, countryFeature } from './borders.js'
 import { atlasStyle } from './atlas.js'
+import { joyStyle } from './joy.js'
 
 // Harita temalari (hepsi ucretsiz, anahtar gerektirmez).
 // 'style' bir URL ya da stil nesnesi ureten async fonksiyon olabilir (Atlas).
@@ -36,10 +38,10 @@ const THEMES = {
     label: t('themeAtlas'),
     style: atlasStyle, // ozel imza tema — calisma aninda donusturulur
   },
-  liberty: {
-    id: 'liberty',
-    label: t('themeColorful'),
-    style: 'https://tiles.openfreemap.org/styles/liberty',
+  joy: {
+    id: 'joy',
+    label: t('themeJoy'),
+    style: joyStyle, // canli cizgi film gorunumu — calisma aninda boyanir
   },
   dark: {
     id: 'dark',
@@ -121,8 +123,9 @@ function setProgressFrac(map, frac) {
 // Durak/yol onbellek anahtarlari — saf, durum tasimaz. Modul seviyesinde
 // tanimli olduklari icin her render'da yeniden yaratilmazlar.
 const key = (s) => `${s.lat.toFixed(2)},${s.lng.toFixed(2)}`
-const roadKey = (a, b) =>
-  `${a.lat.toFixed(3)},${a.lng.toFixed(3)}>${b.lat.toFixed(3)},${b.lng.toFixed(3)}`
+const roadKey = (a, b, via) =>
+  `${a.lat.toFixed(3)},${a.lng.toFixed(3)}>${b.lat.toFixed(3)},${b.lng.toFixed(3)}` +
+  (via ? `|${via.lat.toFixed(3)},${via.lng.toFixed(3)}` : '')
 
 // Hava durumu kodu -> emoji (saf)
 const weatherEmoji = (code) => {
@@ -213,6 +216,11 @@ export default function App() {
 
   const [theme, setTheme] = useState('atlas')
   const [camera, setCamera] = useState('follow') // 'follow' (sinematik) | 'fixed' (sabit, en akici)
+  // Rota bukme noktalari: bacak index'i -> {lat,lng}. Kullanici bacagin
+  // ortasindaki tutamaci surukleyerek rotanin yonunu sekillendirir.
+  const [shapePts, setShapePts] = useState({})
+  const hydratingRef = useRef(false) // paylasilan rota yuklenirken bukmeler silinmesin
+  const handleMarkersRef = useRef([]) // haritadaki tutamac marker'lari
   const [format, setFormat] = useState('landscape')
   const [speed, setSpeed] = useState(1)
   const [loop, setLoop] = useState(false)
@@ -272,8 +280,14 @@ export default function App() {
   )
 
   const legKm = useMemo(
-    () => stops.slice(0, -1).map((s, i) => distanceKm(s, stops[i + 1])),
-    [stops]
+    () => stops.slice(0, -1).map((_, i) => {
+      // Gercek geometriden (yol/bukme dahil) topla — panel gercek mesafeyi gostersin
+      const pts = legPointsFor(i)
+      let km = 0
+      for (let j = 0; j < pts.length - 1; j++) km += distanceKm(pts[j], pts[j + 1])
+      return km
+    }),
+    [stops, legPointsFor, roadVersion] // eslint-disable-line react-hooks/exhaustive-deps
   )
   const totalKm = useMemo(() => legKm.reduce((a, b) => a + b, 0), [legKm])
 
@@ -288,12 +302,14 @@ export default function App() {
     const from = stops[i]
     const to = stops[i + 1]
     const v = legVeh(i)
+    const sp = shapePts[i] || null
     if (usesRoads(v.id)) {
-      const cached = roadCacheRef.current[roadKey(from, to)]
-      if (cached) return cached // gercek yol
+      const cached = roadCacheRef.current[roadKey(from, to, sp)]
+      if (cached) return cached // gercek yol (bukme noktasi uzerinden olabilir)
     }
+    if (sp) return bendPath(from, sp, to) // kullanici buktu: Bezier
     return buildPath([from, to], v.arc) // kus ucusu (kavisli/duz)
-  }, [stops, legVeh])
+  }, [stops, legVeh, shapePts])
 
   // Yol araclarinin bacaklarini onceden OSRM'den cek (arka planda)
   useEffect(() => {
@@ -302,9 +318,10 @@ export default function App() {
       for (let i = 0; i < stops.length - 1; i++) {
         const v = legVeh(i)
         if (!usesRoads(v.id)) continue
-        const k = roadKey(stops[i], stops[i + 1])
+        const sp = shapePts[i] || null
+        const k = roadKey(stops[i], stops[i + 1], sp)
         if (roadCacheRef.current[k]) continue
-        const pts = await fetchRoadLeg(stops[i], stops[i + 1])
+        const pts = await fetchRoadLeg(stops[i], stops[i + 1], sp)
         if (cancelled) return
         if (pts) {
           roadCacheRef.current[k] = pts
@@ -313,7 +330,7 @@ export default function App() {
       }
     })()
     return () => { cancelled = true }
-  }, [stops, legVehicles]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stops, legVehicles, shapePts]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // --- Harita kurulumu ---------------------------------------------------
@@ -517,6 +534,70 @@ export default function App() {
     else map.once('load', redrawPreview)
   }, [stops, legVehicles, loop, roadVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // --- Rota bukme tutamaclari --------------------------------------------
+  // Her bacagin ortasinda surukleneb ilir kucuk bir nokta: kullanici onu
+  // cekerek rotanin o bacaginin hangi yonden gidecegini belirler
+  // (TravelBoast'taki sari sekillendirme noktalari gibi).
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    handleMarkersRef.current.forEach((m) => m.remove())
+    handleMarkersRef.current = []
+    if (playing || stops.length < 2) return
+
+    for (let i = 0; i < stops.length - 1; i++) {
+      const from = stops[i]
+      const to = stops[i + 1]
+      const pts = legPointsFor(i)
+      const mid = shapePts[i] || pts[Math.floor(pts.length / 2)]
+      const el = document.createElement('div')
+      el.className = 'bend-handle'
+      el.title = t('bendHint')
+      const mk = new maplibregl.Marker({ element: el, draggable: true })
+        .setLngLat([mid.lng, mid.lat])
+        .addTo(map)
+
+      // Canli onizleme: surukleme sirasinda state'e DOKUNMADAN (marker'lar
+      // yeniden kurulup drag'i kirmasin) yalnizca onizleme cizgisi guncellenir.
+      // Yol araclarinda gecici Bezier gosterilir; birakinca OSRM via rotasina oturur.
+      let raf = 0
+      mk.on('drag', () => {
+        if (raf) return
+        raf = requestAnimationFrame(() => {
+          raf = 0
+          const cur = mk.getLngLat()
+          const coords = []
+          for (let j = 0; j < stops.length - 1; j++) {
+            const jp = j === i
+              ? bendPath(from, { lat: cur.lat, lng: cur.lng }, to)
+              : legPointsFor(j)
+            for (const p of jp) coords.push([p.lng, p.lat])
+          }
+          map.getSource('route-preview')?.setData({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: coords },
+          })
+        })
+      })
+      mk.on('dragend', () => {
+        const p = mk.getLngLat()
+        setShapePts((prev) => ({ ...prev, [i]: { lat: p.lat, lng: p.lng } }))
+      })
+      handleMarkersRef.current.push(mk)
+    }
+    return () => {
+      handleMarkersRef.current.forEach((m) => m.remove())
+      handleMarkersRef.current = []
+    }
+  }, [stops, legVehicles, shapePts, roadVersion, playing, loop]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Durak sayisi/dongu degisince bacak index'leri kayar — bukmeler sifirlanir.
+  // applyState (paylasilan/kayitli rota) yuklerken bayrakla korunur.
+  useEffect(() => {
+    if (hydratingRef.current) return
+    setShapePts({})
+  }, [stops.length, loop]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // --- URL'den rota yukleme (ilk acilis) ---------------------------------
   useEffect(() => {
     setSaved(loadSaved())
@@ -527,6 +608,9 @@ export default function App() {
   function applyState(r) {
     if (!r?.stops?.length) return
     resetAnimation()
+    hydratingRef.current = true
+    setTimeout(() => { hydratingRef.current = false }, 0) // effect'ler islendikten sonra
+    setShapePts(r.shapePts || {})
     setDeparture(r.stops[0] || null)
     setArrival(r.stops.length > 1 ? r.stops[r.stops.length - 1] : null)
     setMidStops(r.stops.slice(1, -1))
@@ -598,6 +682,7 @@ export default function App() {
 
   function clearAll() {
     resetAnimation()
+    setShapePts({})
     setDeparture(null)
     setArrival(null)
     setMidStops([])
@@ -730,15 +815,16 @@ export default function App() {
 
     // Yol araclarinin eksik bacaklarini animasyondan once cek
     const needRoads = stops.slice(0, -1).some((_, i) =>
-      usesRoads(legVeh(i).id) && !roadCacheRef.current[roadKey(stops[i], stops[i + 1])]
+      usesRoads(legVeh(i).id) && !roadCacheRef.current[roadKey(stops[i], stops[i + 1], shapePts[i] || null)]
     )
     if (needRoads) {
       showToast(t('toastFetchingRoads'))
       for (let i = 0; i < stops.length - 1; i++) {
         if (!usesRoads(legVeh(i).id)) continue
-        const k = roadKey(stops[i], stops[i + 1])
+        const sp = shapePts[i] || null
+        const k = roadKey(stops[i], stops[i + 1], sp)
         if (roadCacheRef.current[k]) continue
-        const pts = await fetchRoadLeg(stops[i], stops[i + 1])
+        const pts = await fetchRoadLeg(stops[i], stops[i + 1], sp)
         if (pts) roadCacheRef.current[k] = pts
       }
       setRoadVersion((n) => n + 1)
@@ -1023,9 +1109,10 @@ export default function App() {
     // Yol araclarinin eksik bacaklarini once cek
     for (let i = 0; i < stops.length - 1; i++) {
       if (!usesRoads(legVeh(i).id)) continue
-      const k = roadKey(stops[i], stops[i + 1])
+      const sp = shapePts[i] || null
+      const k = roadKey(stops[i], stops[i + 1], sp)
       if (roadCacheRef.current[k]) continue
-      const pts = await fetchRoadLeg(stops[i], stops[i + 1])
+      const pts = await fetchRoadLeg(stops[i], stops[i + 1], sp)
       if (pts) roadCacheRef.current[k] = pts
     }
     const full = []
@@ -1049,7 +1136,7 @@ export default function App() {
 
   // --- Paylasim & kaydetme ----------------------------------------------
   function currentState() {
-    return { stops: baseStops, legVehicles, theme, loop, speed, camera }
+    return { stops: baseStops, legVehicles, theme, loop, speed, camera, shapePts }
   }
 
   async function handleShare() {

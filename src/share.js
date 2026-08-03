@@ -19,6 +19,9 @@ function toCompact(state) {
     p: state.loop ? 1 : 0,
     sp: state.speed || 1,
     c: state.camera === 'fixed' ? 1 : 0,
+    sh: Object.entries(state.shapePts || {}).map(([i, p]) => ({
+      i: +i, a: +p.lat.toFixed(4), o: +p.lng.toFixed(4),
+    })),
   }
 }
 
@@ -31,6 +34,7 @@ function fromCompact(c) {
     loop: !!c.p,
     speed: c.sp || 1,
     camera: c.c ? 'fixed' : 'follow',
+    shapePts: Object.fromEntries((Array.isArray(c.sh) ? c.sh : []).map((e) => [e.i, { lat: e.a, lng: e.o }])),
   }
 }
 

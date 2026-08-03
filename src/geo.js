@@ -81,6 +81,28 @@ function unwrapAntimeridian(pts) {
   return pts
 }
 
+// Kullanicinin surukledigi C noktasindan (t=0.5'te tam ustunden) gecen
+// kuadratik Bezier yolu — rota bukme tutamaclari icin.
+// Kontrol noktasi, egrinin ortasi C'ye denk gelecek sekilde turetilir.
+export function bendPath(a, c, b) {
+  const ctrl = {
+    lat: 2 * c.lat - (a.lat + b.lat) / 2,
+    lng: 2 * c.lng - (a.lng + b.lng) / 2,
+  }
+  const dist = distanceKm(a, c) + distanceKm(c, b)
+  const n = Math.max(64, Math.min(512, Math.round(dist / 6)))
+  const pts = []
+  for (let i = 0; i <= n; i++) {
+    const t = i / n
+    const u = 1 - t
+    pts.push({
+      lat: u * u * a.lat + 2 * u * t * ctrl.lat + t * t * b.lat,
+      lng: u * u * a.lng + 2 * u * t * ctrl.lng + t * t * b.lng,
+    })
+  }
+  return unwrapAntimeridian(pts)
+}
+
 // Tum rota: her nokta {lng, lat, bearing, legIndex}
 export function buildPath(stops, arc) {
   const path = []
@@ -165,7 +187,13 @@ export function usesRoads(vehicleId) {
 }
 
 // OSRM'den bir bacagin yol geometrisini ceker. Basarisiz olursa null doner.
-export async function fetchRoadLeg(a, b) {
+export async function fetchRoadLeg(a, b, via = null) {
+  // Bukme noktasi varsa: A→via ve via→B ayri cekilir, birlestirilir.
+  if (via) {
+    const [p1, p2] = await Promise.all([fetchRoadLeg(a, via), fetchRoadLeg(via, b)])
+    if (!p1 || !p2) return null
+    return p1.concat(p2.slice(1)) // ortak nokta bir kez
+  }
   const url =
     `https://router.project-osrm.org/route/v1/driving/` +
     `${a.lng},${a.lat};${b.lng},${b.lat}` +
