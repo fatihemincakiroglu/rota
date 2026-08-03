@@ -98,12 +98,12 @@ function drawOverlays(ctx, map, L, stops, vehiclePos) {
       const rx = pt.x - w / 2
       const ry = pt.y - pinH - bob - h - 6 * k
       roundRect(ctx, rx, ry, w, h, h / 2)
-      ctx.fillStyle = 'rgba(11,17,32,0.92)'
+      ctx.fillStyle = 'rgba(253,247,242,0.96)'
       ctx.fill()
       ctx.strokeStyle = '#FF6B5B'
       ctx.lineWidth = 1.5 * k
       ctx.stroke()
-      ctx.fillStyle = '#F2EDE3'
+      ctx.fillStyle = '#4a3f3a'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(label, pt.x, ry + h / 2 + 1 * k)
@@ -120,7 +120,7 @@ function drawOverlays(ctx, map, L, stops, vehiclePos) {
     const ry = y - h - 12 * k
 
     roundRect(ctx, rx, ry, w, h, h / 2)
-    ctx.fillStyle = 'rgba(11,17,32,0.92)'
+    ctx.fillStyle = 'rgba(253,247,242,0.96)'
     ctx.fill()
     ctx.strokeStyle = '#FFB547'
     ctx.lineWidth = 1.5 * k
@@ -131,7 +131,7 @@ function drawOverlays(ctx, map, L, stops, vehiclePos) {
     ctx.arc(rx + 13 * k, ry + h / 2, 5 * k, 0, Math.PI * 2)
     ctx.fill()
 
-    ctx.fillStyle = '#F2EDE3'
+    ctx.fillStyle = '#4a3f3a'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     ctx.fillText(label, rx + 23 * k, ry + h / 2 + 1 * k)

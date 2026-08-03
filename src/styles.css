@@ -834,3 +834,56 @@ input:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .arrival-img { animation: none; }
 }
+
+/* Sade durak isaretleri (siyah kod etiketleri kaldirildi) */
+.dep-dot {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #3fbf7f; border: 3px solid #fff;
+  box-shadow: 0 0 0 2px rgba(63,191,127,0.35), 0 2px 6px rgba(0,0,0,0.3);
+}
+.via-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--amber); border: 2.5px solid #fff;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+}
+.dep-dot.arrived, .via-dot.arrived { animation: pin-pop 0.9s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+/* Tanitim turu karti */
+.tour-card {
+  position: fixed;
+  left: 50%; bottom: 26px; transform: translateX(-50%);
+  width: min(440px, calc(100vw - 32px));
+  background: #fdf7f2;
+  border: 2px solid #FF6B5B;
+  border-radius: 16px;
+  padding: 16px 18px 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.28);
+  z-index: 60;
+  animation: tour-in 0.35s ease;
+}
+@keyframes tour-in { from { opacity: 0; transform: translate(-50%, 14px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.tour-title { font: 700 16px var(--sans, 'Space Grotesk', sans-serif); color: #2b2118; margin-bottom: 4px; }
+.tour-body { font: 400 13.5px/1.45 var(--sans, 'Space Grotesk', sans-serif); color: #57493a; }
+.tour-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.tour-skip {
+  background: none; border: none; padding: 4px 2px;
+  font: 500 12px var(--mono); color: #9b8b7a;
+  text-decoration: underline; cursor: pointer;
+}
+.tour-skip:hover { color: #57493a; }
+.tour-dots { display: flex; gap: 5px; }
+.tour-dots span { width: 7px; height: 7px; border-radius: 50%; background: #e3d5c3; }
+.tour-dots span.on { background: #FF6B5B; }
+.tour-next {
+  background: #FF6B5B; color: #fff; border: none;
+  padding: 8px 16px; border-radius: 999px;
+  font: 700 13px var(--mono); cursor: pointer;
+}
+.tour-next:hover { filter: brightness(1.06); }
+
+/* Tur adiminda ilgili panel bolumu nabiz gibi parlar */
+.tour-hl { border-radius: 12px; animation: tour-pulse 1.4s ease-in-out infinite; }
+@keyframes tour-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,91,0.55); }
+  50% { box-shadow: 0 0 0 6px rgba(255,107,91,0); }
+}

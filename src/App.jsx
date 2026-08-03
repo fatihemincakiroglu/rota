@@ -96,6 +96,13 @@ const SPEEDS = [
 
 const DWELL = 750 // duraklarda bekleme (ms)
 
+// Tanitim turunun demo rotasi (Istanbul -> Paris, hafif kuzeye bukulmus)
+const TOUR_DEMO = {
+  dep: { name: 'İstanbul', full: 'İstanbul, Türkiye', lat: 41.0082, lng: 28.9784 },
+  arr: { name: 'Paris', full: 'Paris, Fransa', lat: 48.8566, lng: 2.3522 },
+  bend: { lat: 52.4, lng: 16 },
+}
+
 // Sinematik kamera: hafif 3B egim. Seyir aninda daha egik, durakta biraz duzelir.
 const PITCH_CRUISE = 55 // seyir egimi (derece) — yol/manzara perspektifi
 const PITCH_CITY = 45   // durak yaklasiminda biraz daha duz
@@ -513,19 +520,17 @@ export default function App() {
       const isLast = i === uniqueStops.length - 1 && uniqueStops.length > 1 && !loop
       const tag = i === 0 ? t('tagDep') : isLast ? t('tagArr') : t('tagVia')
       const el = document.createElement('div')
-      el.title = s.name // tam ad: uzerine gelince ipucu
+      el.title = s.name // tam ad: uzerine gelince ipucu (etiket yok, sade gorunum)
       if (isLast) {
-        // VARIS: ziplayan konum pini + ustunde sehir etiketi
+        // VARIS: sadece ziplayan konum pini — metin/kisaltma yok
         el.className = 'arrival-pin'
-        el.innerHTML =
-          `<span class="arrival-label"><span class="stop-pin-num arr">${tag}</span>${shortLabel(s.name)}</span>` +
-          `<img class="arrival-img" src="/pin-arrival.png" alt="" width="44" height="44" />`
+        el.innerHTML = `<img class="arrival-img" src="/pin-arrival.png" alt="" width="44" height="44" />`
+      } else if (i === 0) {
+        el.className = 'dep-dot' // KALKIS: yesil nokta
       } else {
-        // KALKIS yesil rozetle ayrisir; ara duraklar amber kalir
-        el.className = 'stop-pin' + (i === 0 ? ' departure' : '')
-        el.innerHTML = `<span class="stop-pin-num">${tag}</span><span class="stop-pin-name">${shortLabel(s.name)}</span>`
+        el.className = 'via-dot' // ARA DURAK: kucuk amber nokta
       }
-      return new maplibregl.Marker({ element: el, anchor: 'bottom' })
+      return new maplibregl.Marker({ element: el, anchor: isLast ? 'bottom' : 'center' })
         .setLngLat([s.lng, s.lat])
         .addTo(map)
     })
@@ -547,6 +552,51 @@ export default function App() {
     if (map.isStyleLoaded()) redrawPreview()
     else map.once('load', redrawPreview)
   }, [stops, legVehicles, loop, roadVersion]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Ilk kullanim tanitimi (tour) --------------------------------------
+  // Ilk ziyarette 6 adimlik tur: her adim panelde bir bolumu isaret eder ve
+  // HARITA da o adima tepki verir (ucus, demo rota, bukme, canli animasyon).
+  const [tourStep, setTourStep] = useState(-1) // -1 = kapali
+  const tourPlayedRef = useRef(false)
+  const TOUR_LAST = 5
+
+  useEffect(() => {
+    try { if (localStorage.getItem('rota:tourDone')) return } catch { return }
+    if (readRouteFromUrl()) return // paylasilan linkle gelen kullaniciyi bolme
+    const id = setTimeout(() => setTourStep(0), 900)
+    return () => clearTimeout(id)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function finishTour() {
+    try { localStorage.setItem('rota:tourDone', '1') } catch { /* gizli mod vb. */ }
+    resetAnimation()
+    clearAll()
+    setTourStep(-1)
+    mapRef.current?.easeTo({ center: [29, 41], zoom: 3.2, pitch: 0, duration: 1200 })
+  }
+
+  useEffect(() => {
+    if (tourStep < 0) return
+    const map = mapRef.current
+    // Adim basina harita/durum degisikligi — kullanici anlatilan seyi CANLI gorur
+    if (tourStep === 0) {
+      map?.flyTo({ center: [20, 30], zoom: 1.7, pitch: 0, duration: 2400 })
+    } else if (tourStep === 1) {
+      setDeparture(TOUR_DEMO.dep) // harita Istanbul'a ucar (mevcut efekt)
+    } else if (tourStep === 2) {
+      setArrival(TOUR_DEMO.arr) // rota cizilir, kamera rotaya oturur
+    } else if (tourStep === 3) {
+      setShapePts({ 0: TOUR_DEMO.bend }) // cizgi bukulur
+      map?.easeTo({ pitch: 32, duration: 900 })
+    } else if (tourStep === 4) {
+      map?.easeTo({ pitch: 0, duration: 700 })
+    } else if (tourStep === 5) {
+      if (!tourPlayedRef.current) {
+        tourPlayedRef.current = true
+        play(false) // demo animasyon kendiliginden baslar
+      }
+    }
+  }, [tourStep]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Rota bukme tutamaclari --------------------------------------------
   // Her bacagin ortasinda surukleneb ilir kucuk bir nokta: kullanici onu
@@ -1241,6 +1291,7 @@ export default function App() {
           <p>{t('tagline')}</p>
         </header>
 
+        <div className={tourStep === 1 ? 'tour-hl' : undefined}>
         <SearchBox
           label={t('departureLabel')}
           value={departure}
@@ -1249,6 +1300,8 @@ export default function App() {
           onClear={() => { setDeparture(null); resetAnimation() }}
           disabled={playing}
         />
+        </div>
+        <div className={tourStep === 2 ? 'tour-hl' : undefined}>
         <SearchBox
           label={t('arrivalLabel')}
           value={arrival}
@@ -1257,6 +1310,7 @@ export default function App() {
           onClear={() => { setArrival(null); resetAnimation() }}
           disabled={playing}
         />
+        </div>
 
         {/* Ara duraklar — surukle-birakla sirala */}
         <div className="mids">
@@ -1400,7 +1454,7 @@ export default function App() {
 
         {/* Varsayilan arac (yeni bacaklara uygulanir) */}
         <div className="section-label">{t('defaultVehicle')}</div>
-        <div className="vehicles">
+        <div className={`vehicles ${tourStep === 4 ? 'tour-hl' : ''}`}>
           {VEHICLES.map((v) => (
             <button
               key={v.id}
@@ -1449,7 +1503,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="actions">
+        <div className={`actions ${tourStep === 5 ? 'tour-hl' : ''}`}>
           <button className="play" onClick={() => play(false)} disabled={!routeReady || playing}>
             {playing ? t('playing') : t('startJourney')}
           </button>
@@ -1495,6 +1549,26 @@ export default function App() {
           dangerouslySetInnerHTML={{ __html: s.svg }}
         />
       ))}
+      {tourStep >= 0 && (
+        <div className="tour-card">
+          <div className="tour-title">{t(`tourT${tourStep}`)}</div>
+          <div className="tour-body">{t(`tourB${tourStep}`)}</div>
+          <div className="tour-foot">
+            <button className="tour-skip" onClick={finishTour}>{t('tourSkip')}</button>
+            <div className="tour-dots">
+              {Array.from({ length: TOUR_LAST + 1 }).map((_, i) => (
+                <span key={i} className={i === tourStep ? 'on' : ''} />
+              ))}
+            </div>
+            <button
+              className="tour-next"
+              onClick={() => (tourStep >= TOUR_LAST ? finishTour() : setTourStep(tourStep + 1))}
+            >
+              {tourStep >= TOUR_LAST ? t('tourDone') : t('tourNext')}
+            </button>
+          </div>
+        </div>
+      )}
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
