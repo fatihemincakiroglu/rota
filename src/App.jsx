@@ -26,18 +26,20 @@ import { LOGO_URL, getLogoImage } from './logo.js'
 import { stampFor, stampSvg } from './stamp.js'
 import { nightPolygon, clockForProgress } from './daynight.js'
 import { loadBorders, countryAt, countryFeature } from './borders.js'
+import { atlasStyle } from './atlas.js'
 
-// Harita temalari (hepsi ucretsiz, anahtar gerektirmez)
+// Harita temalari (hepsi ucretsiz, anahtar gerektirmez).
+// 'style' bir URL ya da stil nesnesi ureten async fonksiyon olabilir (Atlas).
 const THEMES = {
+  atlas: {
+    id: 'atlas',
+    label: t('themeAtlas'),
+    style: atlasStyle, // ozel imza tema — calisma aninda donusturulur
+  },
   liberty: {
     id: 'liberty',
     label: t('themeColorful'),
     style: 'https://tiles.openfreemap.org/styles/liberty',
-  },
-  voyager: {
-    id: 'voyager',
-    label: t('themeVoyager'),
-    style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
   },
   dark: {
     id: 'dark',
@@ -45,9 +47,14 @@ const THEMES = {
     style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
   },
 }
-// Bilinmeyen/eski tema id'leri (or. kaldirilan 'light') varsayilana duser —
-// eski paylasim linkleri kirilmaz.
-const themeCfg = (id) => THEMES[id] || THEMES.liberty
+// Bilinmeyen/eski tema id'leri (or. kaldirilan 'light'/'voyager') varsayilana
+// duser — eski paylasim linkleri kirilmaz.
+const themeCfg = (id) => THEMES[id] || THEMES.atlas
+// URL ya da async fonksiyon — her zaman Promise doner
+const resolveStyle = (id) => {
+  const c = themeCfg(id)
+  return typeof c.style === 'function' ? c.style() : Promise.resolve(c.style)
+}
 
 const VEHICLES = [
   // faces: emojinin dogal olarak baktigi aci (ekran, kuzey=0 saat yonu)
@@ -204,7 +211,7 @@ export default function App() {
   const [playing, setPlaying] = useState(false)
   const [currentLeg, setCurrentLeg] = useState(-1)
 
-  const [theme, setTheme] = useState('liberty')
+  const [theme, setTheme] = useState('atlas')
   const [camera, setCamera] = useState('follow') // 'follow' (sinematik) | 'fixed' (sabit, en akici)
   const [format, setFormat] = useState('landscape')
   const [speed, setSpeed] = useState(1)
@@ -315,20 +322,26 @@ export default function App() {
     // ikinci WebGL context'ini kurma.
     if (mapRef.current || !mapContainer.current) return
     getLogoImage() // logoyu onceden yukle (video/PNG cizimi icin hazir olsun)
-    const map = new maplibregl.Map({
-      container: mapContainer.current,
-      style: themeCfg(theme).style,
-      center: [29, 41],
-      zoom: 3.2,
-      preserveDrawingBuffer: true,
-      attributionControl: { compact: true },
-    })
-    mapRef.current = map
-    map.on('load', () => addRouteLayers(map))
+    let disposed = false // StrictMode/unmount: stil beklerken sokulduysek kurma
+    ;(async () => {
+      const style = await resolveStyle(theme)
+      if (disposed || mapRef.current || !mapContainer.current) return
+      const map = new maplibregl.Map({
+        container: mapContainer.current,
+        style,
+        center: [29, 41],
+        zoom: 3.2,
+        preserveDrawingBuffer: true,
+        attributionControl: { compact: true },
+      })
+      mapRef.current = map
+      map.on('load', () => addRouteLayers(map))
+    })()
 
     return () => {
+      disposed = true
       cancelAnimationFrame(rafRef.current)
-      map.remove()
+      mapRef.current?.remove()
       mapRef.current = null
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -422,11 +435,16 @@ export default function App() {
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    map.setStyle(themeCfg(theme).style)
-    map.once('styledata', () => {
-      addRouteLayers(map)
-      redrawPreview()
+    let stale = false // hizli ardisik tema tiklamalarinda eski stil uygulanmasin
+    resolveStyle(theme).then((style) => {
+      if (stale || !mapRef.current) return
+      map.setStyle(style)
+      map.once('styledata', () => {
+        addRouteLayers(map)
+        redrawPreview()
+      })
     })
+    return () => { stale = true }
   }, [theme]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Gunduz/gece toggle degisince onizlemede gece golgesini guncelle
