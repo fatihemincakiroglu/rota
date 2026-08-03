@@ -1,6 +1,6 @@
 // "Atlas" temasi — MapBoast'un imza premium gorunumu.
 // CARTO Positron stil JSON'u calisma aninda cekilip donusturulur:
-//   * parsomen/krem zemin + vintage celik-turkuaz su (seyahat posteri paleti)
+//   * yesil kara + mavi deniz (premium doga paleti)
 //   * POI / magaza / toplu tasima ikonlari gizlenir (dekluttering = premium his)
 //   * AWS acik yukseklik verisiyle KABARTMA (hillshade) — daglara derinlik
 // Ucretsiz, API anahtari gerektirmez. Sonuc onbelleklenir (tema gecisi hizli).
@@ -12,20 +12,20 @@ const DEM_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{
 
 // Palet — sitenin krem arayuzuyle (#fdf7f2) butunlesik "seyahat atlasi" tonlari
 const P = {
-  land: '#f4ecdd',      // parsomen zemin
-  landAlt: '#efe6d4',   // ikincil zemin dokusu
-  water: '#a9c6cc',     // vintage celik-turkuaz
-  waterLine: '#93b4bb',
-  waterText: '#5f858f',
-  green: '#d9e2c8',     // adacayi yesili (park/orman)
-  building: '#e9dfcc',
-  road: '#d8cbb4',      // sicak yol tonu
-  roadMajor: '#c3b193', // otoyol/ana arter biraz koyu
-  border: '#b39c80',    // ulke/il siniri
-  text: '#57493a',      // etiket murekkebi
-  textBig: '#453827',   // ulke/buyuk sehir
-  halo: '#f4ecdd',
-  hillShadow: '#8f7c63',
+  land: '#cde4b4',      // yumusak cimen yesili zemin
+  landAlt: '#c3ddab',   // ikincil zemin dokusu
+  water: '#79b7d9',     // derin ama yumusak deniz mavisi
+  waterLine: '#68a8cc',
+  waterText: '#3f7ea3',
+  green: '#a8cf8d',     // orman/park biraz koyu yesil
+  building: '#bcd6a2',
+  road: '#eef3e6',      // acik yollar
+  roadMajor: '#ffffff', // ana arterler beyaz serit
+  border: '#8fae94',    // yesilimsi gri sinirlar
+  text: '#2f5136',      // koyu yesil murekkep
+  textBig: '#1f3d2a',   // ulke/buyuk sehir
+  halo: '#eef5e4',
+  hillShadow: '#5c7a5e', // kabartma golgesi yesil-gri (kahverengi degil)
 }
 
 // id + source-layer icinde arama (stil surumleri arasi dayanikli eslesme)

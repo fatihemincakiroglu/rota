@@ -15,7 +15,7 @@ function toCompact(state) {
       o: +s.lng.toFixed(4),
     })),
     l: state.legVehicles || [],
-    t: state.theme || 'atlas',
+    t: state.theme || 'joy',
     p: state.loop ? 1 : 0,
     sp: state.speed || 1,
     c: state.camera === 'fixed' ? 1 : 0,
@@ -30,7 +30,7 @@ function fromCompact(c) {
   return {
     stops: c.s.map((x) => ({ name: x.n, full: x.f || x.n, lat: x.a, lng: x.o })),
     legVehicles: Array.isArray(c.l) ? c.l : [],
-    theme: c.t || 'atlas',
+    theme: c.t || 'joy',
     loop: !!c.p,
     speed: c.sp || 1,
     camera: c.c ? 'fixed' : 'follow',

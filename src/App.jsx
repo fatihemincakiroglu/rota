@@ -33,15 +33,15 @@ import { joyStyle } from './joy.js'
 // Harita temalari (hepsi ucretsiz, anahtar gerektirmez).
 // 'style' bir URL ya da stil nesnesi ureten async fonksiyon olabilir (Atlas).
 const THEMES = {
-  atlas: {
-    id: 'atlas',
-    label: t('themeAtlas'),
-    style: atlasStyle, // ozel imza tema — calisma aninda donusturulur
-  },
   joy: {
     id: 'joy',
     label: t('themeJoy'),
-    style: joyStyle, // canli cizgi film gorunumu — calisma aninda boyanir
+    style: joyStyle, // canli cizgi film: mavi deniz + yesil kara (varsayilan)
+  },
+  atlas: {
+    id: 'atlas',
+    label: t('themeAtlas'),
+    style: atlasStyle, // premium doga: yumusak yesil-mavi + kabartma
   },
   dark: {
     id: 'dark',
@@ -51,7 +51,7 @@ const THEMES = {
 }
 // Bilinmeyen/eski tema id'leri (or. kaldirilan 'light'/'voyager') varsayilana
 // duser — eski paylasim linkleri kirilmaz.
-const themeCfg = (id) => THEMES[id] || THEMES.atlas
+const themeCfg = (id) => THEMES[id] || THEMES.joy
 // URL ya da async fonksiyon — her zaman Promise doner
 const resolveStyle = (id) => {
   const c = themeCfg(id)
@@ -214,7 +214,7 @@ export default function App() {
   const [playing, setPlaying] = useState(false)
   const [currentLeg, setCurrentLeg] = useState(-1)
 
-  const [theme, setTheme] = useState('atlas')
+  const [theme, setTheme] = useState('joy')
   const [camera, setCamera] = useState('follow') // 'follow' (sinematik) | 'fixed' (sabit, en akici)
   // Rota bukme noktalari: bacak index'i -> {lat,lng}. Kullanici bacagin
   // ortasindaki tutamaci surukleyerek rotanin yonunu sekillendirir.

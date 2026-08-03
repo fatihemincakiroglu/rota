@@ -100,7 +100,9 @@ export function bendPath(a, c, b) {
       lng: u * u * a.lng + 2 * u * t * ctrl.lng + t * t * b.lng,
     })
   }
-  return unwrapAntimeridian(pts)
+  // ONEMLI: yon (bearing) eklenmeli — animasyon her karede p.bearing okur;
+  // eksikse rotasyon NaN'a duser ve arac ikonu ters/sapmis gorunur.
+  return withBearings(unwrapAntimeridian(pts))
 }
 
 // Tum rota: her nokta {lng, lat, bearing, legIndex}
