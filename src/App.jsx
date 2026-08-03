@@ -279,17 +279,6 @@ export default function App() {
     [stops, legVeh]
   )
 
-  const legKm = useMemo(
-    () => stops.slice(0, -1).map((_, i) => {
-      // Gercek geometriden (yol/bukme dahil) topla — panel gercek mesafeyi gostersin
-      const pts = legPointsFor(i)
-      let km = 0
-      for (let j = 0; j < pts.length - 1; j++) km += distanceKm(pts[j], pts[j + 1])
-      return km
-    }),
-    [stops, legPointsFor, roadVersion] // eslint-disable-line react-hooks/exhaustive-deps
-  )
-  const totalKm = useMemo(() => legKm.reduce((a, b) => a + b, 0), [legKm])
 
   // Saf yardimcilar — modul seviyesinde tanimli (her render'da yeniden yaratilmaz)
   const showToast = useCallback((msg) => {
@@ -310,6 +299,20 @@ export default function App() {
     if (sp) return bendPath(from, sp, to) // kullanici buktu: Bezier
     return buildPath([from, to], v.arc) // kus ucusu (kavisli/duz)
   }, [stops, legVeh, shapePts])
+
+  // NOT: legKm, legPointsFor'u kullandigi icin ondan SONRA tanimlanmali
+  // (const useCallback'ten once erisim TDZ hatasiyla sayfayi bosaltir).
+  const legKm = useMemo(
+    () => stops.slice(0, -1).map((_, i) => {
+      // Gercek geometriden (yol/bukme dahil) topla — panel gercek mesafeyi gostersin
+      const pts = legPointsFor(i)
+      let km = 0
+      for (let j = 0; j < pts.length - 1; j++) km += distanceKm(pts[j], pts[j + 1])
+      return km
+    }),
+    [stops, legPointsFor, roadVersion] // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  const totalKm = useMemo(() => legKm.reduce((a, b) => a + b, 0), [legKm])
 
   // Yol araclarinin bacaklarini onceden OSRM'den cek (arka planda)
   useEffect(() => {
