@@ -93,6 +93,24 @@ const PITCH_CITY = 45   // durak yaklasiminda biraz daha duz
 const easeInOutCubic = (t) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
 
+// --- Performans: ilerleme cizgisi line-gradient ile cizilir ---------------
+// Eski yontem her karede binlerce noktali diziyi yeniden kurup setData ile
+// GPU'ya yukluyordu (GC + serilestirme = mikro donmalar). Yeni yontemde tam
+// geometri BIR KEZ yuklenir; her karede yalnizca kucuk bir paint degeri
+// (gradient esigi) guncellenir.
+// line-progress mercator duzleminde olctugu icin frac da ayni metrikle
+// hesaplanir — cizgi ucu araca tam oturur.
+const _mercY = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))
+const mercSeg = (a, b) =>
+  Math.hypot(((b[0] - a[0]) * Math.PI) / 180, _mercY(b[1]) - _mercY(a[1]))
+
+function setProgressFrac(map, frac) {
+  const stop = frac >= 1 ? 2 : Math.max(frac, 1e-6)
+  const g = ['step', ['line-progress'], '#FF6B5B', stop, 'rgba(255,107,91,0)']
+  if (map.getLayer('route-progress')) map.setPaintProperty('route-progress', 'line-gradient', g)
+  if (map.getLayer('route-progress-glow')) map.setPaintProperty('route-progress-glow', 'line-gradient', g)
+}
+
 // Durak/yol onbellek anahtarlari — saf, durum tasimaz. Modul seviyesinde
 // tanimli olduklari icin her render'da yeniden yaratilmazlar.
 const key = (s) => `${s.lat.toFixed(2)},${s.lng.toFixed(2)}`
@@ -187,6 +205,7 @@ export default function App() {
   const [currentLeg, setCurrentLeg] = useState(-1)
 
   const [theme, setTheme] = useState('liberty')
+  const [camera, setCamera] = useState('follow') // 'follow' (sinematik) | 'fixed' (sabit, en akici)
   const [format, setFormat] = useState('landscape')
   const [speed, setSpeed] = useState(1)
   const [loop, setLoop] = useState(false)
@@ -380,6 +399,7 @@ export default function App() {
     if (!map.getSource('route-progress')) {
       map.addSource('route-progress', {
         type: 'geojson',
+        lineMetrics: true, // line-gradient ile ilerleme cizimi icin gerekli
         data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } },
       })
       map.addLayer({
@@ -496,6 +516,7 @@ export default function App() {
     setTheme(themeCfg(r.theme).id)
     setLoop(!!r.loop)
     setSpeed(r.speed || 1)
+    setCamera(r.camera === 'fixed' ? 'fixed' : 'follow')
   }
 
   // --- Hava durumu (Open-Meteo, anahtarsiz) ------------------------------
@@ -745,14 +766,27 @@ export default function App() {
     const realTotalKm = legs.reduce((a, l) => a + l.km, 0)
 
     // --- Performans: kumulatif on-hesap ---
-    // prefixCoords[i] = 0..i-1 bacaklarinin tum noktalari (bir kez kurulur)
-    // prefixKm[i]     = 0..i-1 bacaklarinin toplam km'si
-    const prefixCoords = [[]]
+    // prefixKm[i]   = 0..i-1 bacaklarinin toplam km'si (sayac icin)
+    // Her bacak icin mercator kumulatif uzunluk (cumM) hesaplanir; gradient
+    // esigi bu metrikle bulunur ki cizgi ucu line-progress ile ayni hizada olsun.
     const prefixKm = [0]
+    const prefixMerc = [0]
+    const fullCoords = []
     for (let i = 0; i < legs.length; i++) {
-      prefixCoords.push(prefixCoords[i].concat(legs[i].coords))
       prefixKm.push(prefixKm[i] + legs[i].km)
+      const cs = legs[i].coords
+      const cumM = new Float64Array(cs.length)
+      for (let j = 1; j < cs.length; j++) cumM[j] = cumM[j - 1] + mercSeg(cs[j - 1], cs[j])
+      legs[i].cumM = cumM
+      legs[i].merc = cumM[cs.length - 1]
+      prefixMerc.push(prefixMerc[i] + legs[i].merc)
+      for (let j = 0; j < cs.length; j++) fullCoords.push(cs[j])
     }
+    const totalMerc = prefixMerc[legs.length] || 1
+
+    // Tam rota geometrisi TEK SEFERDE yuklenir; animasyon boyunca setData YOK.
+    src?.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: fullCoords } })
+    setProgressFrac(map, 0)
 
     posRef.current = {
       lng: legs[0].points[0].lng,
@@ -779,11 +813,21 @@ export default function App() {
     let zoom = legs[0].zoomCity
     let bearing = legs[0].points[0].bearing
     let pitch = PITCH_CITY // sinematik egim (yumusak takip edilir)
-    map.easeTo({ center: legs[0].coords[0], zoom, pitch, bearing: 0, duration: 600 })
+    const followCam = camera === 'follow'
+    if (followCam) {
+      map.easeTo({ center: legs[0].coords[0], zoom, pitch, bearing: 0, duration: 600 })
+    } else {
+      // Sabit kamera: rota bastan tek karede — animasyon boyunca kamera hic
+      // oynamaz, YENI KARO YUKLENMEZ. En akici mod; kayitta da titremesiz.
+      const b = new maplibregl.LngLatBounds()
+      stops.forEach((s) => b.extend([s.lng, s.lat]))
+      map.fitBounds(b, { padding: 100, duration: 600, pitch: 0, bearing: 0 })
+    }
 
     const start = performance.now() + 650
     let lastLeg = 0
     let finished = false
+    let lastFrac = -1 // gradient guncelleme esigi (gereksiz paint cagrisi olmasin)
 
     // Ulke gecisi takibi: baslangic noktasinin ulkesini sessizce kaydet
     // (baslangicta pop-up gostermeyiz; ilk gecisten itibaren gosteririz)
@@ -837,10 +881,17 @@ export default function App() {
         inner.textContent = leg.vehicle.emoji
       }
 
-      // Cizilen rota: onceden hazir prefix + mevcut bacagin dilimi
-      const drawn = prefixCoords[legIdx].concat(leg.coords.slice(0, idx + 1))
-      const progressSrc = map.getSource('route-progress')
-      progressSrc?.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: drawn } })
+      // Cizilen rota: gradient esigi guncellenir (geometri zaten GPU'da).
+      // Bacak icinde alt-segman enterpolasyonu ile uc, araca tam oturur.
+      const posF = tE * (leg.points.length - 1)
+      const segT = posF - idx
+      const cm = leg.cumM
+      const within = cm[idx] + (idx + 1 < cm.length ? (cm[idx + 1] - cm[idx]) * segT : 0)
+      const frac = (prefixMerc[legIdx] + within) / totalMerc
+      if (frac - lastFrac >= 0.0015) {
+        lastFrac = frac
+        setProgressFrac(map, frac)
+      }
 
       marker.setLngLat([p.lng, p.lat])
 
@@ -891,14 +942,16 @@ export default function App() {
         done: false,
       }
 
-      const targetZoom =
-        leg.zoomCity + (leg.zoomCruise - leg.zoomCity) * Math.sin(Math.PI * tE)
-      zoom += (targetZoom - zoom) * 0.06
-      // Sinematik egim: seyirde daha egik, durak yaklasiminda biraz duzelir
-      const targetPitch =
-        PITCH_CITY + (PITCH_CRUISE - PITCH_CITY) * Math.sin(Math.PI * tE)
-      pitch += (targetPitch - pitch) * 0.06
-      map.jumpTo({ center: [p.lng, p.lat], zoom, pitch, bearing: 0 })
+      if (followCam) {
+        const targetZoom =
+          leg.zoomCity + (leg.zoomCruise - leg.zoomCity) * Math.sin(Math.PI * tE)
+        zoom += (targetZoom - zoom) * 0.06
+        // Sinematik egim: seyirde daha egik, durak yaklasiminda biraz duzelir
+        const targetPitch =
+          PITCH_CITY + (PITCH_CRUISE - PITCH_CITY) * Math.sin(Math.PI * tE)
+        pitch += (targetPitch - pitch) * 0.06
+        map.jumpTo({ center: [p.lng, p.lat], zoom, pitch, bearing: 0 })
+      }
 
       if (legIdx !== lastLeg) {
         popPin(legIdx)
@@ -911,6 +964,7 @@ export default function App() {
 
       if (done && !finished) {
         finished = true
+        setProgressFrac(map, 1) // cizgiyi tamamen goster
         const last = stops[stops.length - 1]
         popPin(stops.length - 1)
         celebrate([last.lng, last.lat])
@@ -927,8 +981,11 @@ export default function App() {
         }
         const b = new maplibregl.LngLatBounds()
         stops.forEach((s) => b.extend([s.lng, s.lat]))
-        // Bitiste kamera duzlesir (pitch 0) ve tum rotayi tek karede gosterir
-        setTimeout(() => map.fitBounds(b, { padding: 90, duration: 1800, pitch: 0, bearing: 0, essential: true }), 700)
+        // Bitiste kamera duzlesir (pitch 0) ve tum rotayi tek karede gosterir.
+        // Sabit kamerada zaten o karedeyiz — gereksiz hareket yapma.
+        if (followCam) {
+          setTimeout(() => map.fitBounds(b, { padding: 90, duration: 1800, pitch: 0, bearing: 0, essential: true }), 700)
+        }
         if (recorderRef.current) {
           setTimeout(() => {
             recorderRef.current?.stop()
@@ -963,6 +1020,7 @@ export default function App() {
     map
       .getSource('route-progress')
       ?.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: full } })
+    setProgressFrac(map, 1) // onceki animasyondan kalan esik cizgiyi kirpmasin
     const b = new maplibregl.LngLatBounds()
     stops.forEach((s) => b.extend([s.lng, s.lat]))
     map.fitBounds(b, { padding: 110, duration: 0 })
@@ -973,7 +1031,7 @@ export default function App() {
 
   // --- Paylasim & kaydetme ----------------------------------------------
   function currentState() {
-    return { stops: baseStops, legVehicles, theme, loop, speed }
+    return { stops: baseStops, legVehicles, theme, loop, speed, camera }
   }
 
   async function handleShare() {
@@ -1239,6 +1297,13 @@ export default function App() {
 
         {/* Tema + Hiz + Format */}
         <div className="options">
+          <div className="opt">
+            <span className="opt-label">{t('cameraLabel')}</span>
+            <div className="seg">
+              <button className={camera === 'follow' ? 'on' : ''} disabled={playing} onClick={() => setCamera('follow')}>{t('cameraFollow')}</button>
+              <button className={camera === 'fixed' ? 'on' : ''} disabled={playing} onClick={() => setCamera('fixed')}>{t('cameraFixed')}</button>
+            </div>
+          </div>
           <div className="opt">
             <span className="opt-label">{t('mapLabel')}</span>
             <div className="seg">

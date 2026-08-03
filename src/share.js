@@ -18,6 +18,7 @@ function toCompact(state) {
     t: state.theme || 'liberty',
     p: state.loop ? 1 : 0,
     sp: state.speed || 1,
+    c: state.camera === 'fixed' ? 1 : 0,
   }
 }
 
@@ -29,6 +30,7 @@ function fromCompact(c) {
     theme: c.t || 'liberty',
     loop: !!c.p,
     speed: c.sp || 1,
+    camera: c.c ? 'fixed' : 'follow',
   }
 }
 
