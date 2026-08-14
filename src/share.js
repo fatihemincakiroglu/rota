@@ -1,8 +1,9 @@
 // Rota durumunu paylasilabilir baglantiya kodlar/cozer ve
 // tarayicida (localStorage) birden cok rota profili saklar.
+import { t } from './i18n.js'
 
 // --- URL kodlama ---------------------------------------------------------
-// Kompakt bir yapi: { v, stops:[{n,a,o}], legs:[vehicleId], theme, loop, speed }
+// Kompakt bir yapi: { v, stops:[{n,a,o}], legs:[vehicleId], theme, speed }
 // n=name, a=lat, o=lng — kisa tutmak icin.
 
 function toCompact(state) {
@@ -13,10 +14,10 @@ function toCompact(state) {
       f: s.full || s.name,
       a: +s.lat.toFixed(4),
       o: +s.lng.toFixed(4),
+      c: s.cc || undefined, // ISO2 — pasaport damgasi icin
     })),
     l: state.legVehicles || [],
     t: state.theme || 'joy',
-    p: state.loop ? 1 : 0,
     sp: state.speed || 1,
     c: state.camera === 'fixed' ? 1 : 0,
     sh: Object.entries(state.shapePts || {}).map(([i, p]) => ({
@@ -28,10 +29,9 @@ function toCompact(state) {
 function fromCompact(c) {
   if (!c || !Array.isArray(c.s)) return null
   return {
-    stops: c.s.map((x) => ({ name: x.n, full: x.f || x.n, lat: x.a, lng: x.o })),
+    stops: c.s.map((x) => ({ name: x.n, full: x.f || x.n, lat: x.a, lng: x.o, cc: x.c || null })),
     legVehicles: Array.isArray(c.l) ? c.l : [],
     theme: c.t || 'joy',
-    loop: !!c.p,
     speed: c.sp || 1,
     camera: c.c ? 'fixed' : 'follow',
     shapePts: Object.fromEntries((Array.isArray(c.sh) ? c.sh : []).map((e) => [e.i, { lat: e.a, lng: e.o }])),
@@ -96,7 +96,7 @@ export function saveRoute(name, state) {
   const list = loadSaved()
   const entry = {
     id: Date.now().toString(36),
-    name: name || 'Adsız rota',
+    name: name || t('untitledRoute'),
     at: Date.now(),
     data: toCompact(state),
   }
@@ -111,7 +111,11 @@ export function saveRoute(name, state) {
 
 export function deleteSaved(id) {
   const list = loadSaved().filter((e) => e.id !== id)
-  localStorage.setItem(KEY, JSON.stringify(list))
+  try {
+    localStorage.setItem(KEY, JSON.stringify(list))
+  } catch {
+    // gizli mod / kota — listeyi yine de dondur
+  }
   return list
 }
 

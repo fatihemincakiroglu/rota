@@ -1,10 +1,15 @@
 // Pasaport damgasi: her varista ekrana dusen dairesel/dikdortgen damga.
 // Gercek damga gorselleri yerine, ulke adindan programatik SVG uretilir —
 // her ulke icin calisir, gorsel varligi gerektirmez.
+import { countryName } from './borders.js'
+import { LOCALE } from './i18n.js'
 
-// Durak "full" alanindan ( or. "Paris, Fransa" / "Paris, France") ulke adini al.
+// Duragin ulke adi, kullanicinin dilinde.
+// ISO2 kodu varsa (yerlesik liste + Nominatim addressdetails) ondan uretilir;
+// yoksa "full" alaninin son parcasina duselir.
 export function countryOf(stop) {
   if (!stop) return ''
+  if (stop.cc) return countryName(stop.cc, LOCALE)
   const src = stop.full || stop.name || ''
   const parts = src.split(',').map((s) => s.trim()).filter(Boolean)
   return parts.length ? parts[parts.length - 1] : ''
@@ -29,10 +34,11 @@ const INKS = [
 export function stampFor(stop) {
   const country = countryOf(stop) || stop?.name || '—'
   const city = (stop?.name || '').toLocaleUpperCase()
-  const hue = hashHue(country)
+  // Renk/sekil ISO2'den turetilir ki ayni ulke her dilde ayni damgayi alsin
+  const hue = hashHue(stop?.cc || country)
   const ink = INKS[Math.abs(hue) % INKS.length]
   const rotate = ((hashHue(city + country) % 24) - 12) // -12°..+12°
-  const shape = hashHue(country) % 2 === 0 ? 'circle' : 'rect'
+  const shape = hue % 2 === 0 ? 'circle' : 'rect'
   const date = new Date()
   const dd = String(date.getDate()).padStart(2, '0')
   const mon = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][date.getMonth()]

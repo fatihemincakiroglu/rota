@@ -14,8 +14,16 @@ export function distanceKm(a, b) {
 }
 
 export function bearingDeg(a, b) {
-  // Ekran duzleminde basit yon (animasyon icin yeterli)
-  const dx = b.lng - a.lng
+  // Mercator konform bir projeksiyondur: ekrandaki aci = gercek kerteriz.
+  // Dogru formul atan2(dLng * cos(lat), dLat); cos(lat) carpani olmadan
+  // yuksek enlemlerde arac ikonu rotadan sapiyordu (60°'de ~18° hata).
+  const toRad = (d) => (d * Math.PI) / 180
+  let dLng = b.lng - a.lng
+  // Antimeridyen: kisa yaydan git
+  if (dLng > 180) dLng -= 360
+  else if (dLng < -180) dLng += 360
+  const midLat = toRad((a.lat + b.lat) / 2)
+  const dx = dLng * Math.cos(midLat)
   const dy = b.lat - a.lat
   return (Math.atan2(dx, dy) * 180) / Math.PI
 }
@@ -23,9 +31,8 @@ export function bearingDeg(a, b) {
 // Bir bacak (leg) icin nokta dizisi — GERCEK BUYUK DAIRE (great-circle).
 // Kure uzerindeki iki nokta arasindaki en kisa yol; Mercator haritada dogal
 // olarak kavisli gorunur ve kutuplara yakin rotalarda dogru davranir.
-// arc parametresi geriye donuk uyumluluk icin durur; great-circle her durumda
-// dogru geometriyi verdiginden ikisi de ayni yolu kullanir.
-function legPoints(a, b, arc) {
+// Tum araclar ayni geometriyi kullanir: great-circle zaten dogru yolu verir.
+function legPoints(a, b) {
   const toRad = (d) => (d * Math.PI) / 180
   const toDeg = (r) => (r * 180) / Math.PI
 
@@ -106,10 +113,10 @@ export function bendPath(a, c, b) {
 }
 
 // Tum rota: her nokta {lng, lat, bearing, legIndex}
-export function buildPath(stops, arc) {
+export function buildPath(stops) {
   const path = []
   for (let i = 0; i < stops.length - 1; i++) {
-    const pts = legPoints(stops[i], stops[i + 1], arc)
+    const pts = legPoints(stops[i], stops[i + 1])
     for (let j = 0; j < pts.length; j++) {
       const next = pts[Math.min(j + 1, pts.length - 1)]
       path.push({

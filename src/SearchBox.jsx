@@ -36,7 +36,7 @@ export default function SearchBox({
       setLoading(true)
       try {
         const url =
-          `https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=${LANG}&q=` +
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&accept-language=${LANG}&q=` +
           encodeURIComponent(query)
         const res = await fetch(url, { signal: ctrl.signal })
         const data = await res.json()
@@ -46,6 +46,8 @@ export default function SearchBox({
           full: d.display_name,
           lat: parseFloat(d.lat),
           lng: parseFloat(d.lon),
+          // Pasaport damgasi ulke adini bundan uretir (metin ayristirmaktan guvenli)
+          cc: d.address?.country_code?.toUpperCase() || null,
         }))
         // Yerel sonuclarla birlestir, ayni isimleri tekrarlama
         setResults((prev) => {

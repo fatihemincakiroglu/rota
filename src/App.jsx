@@ -10,7 +10,6 @@ import {
   offsetLabel,
   hourDiff,
   usesRoads,
-  fetchRoadLeg,
   bendPath,
 } from './geo.js'
 import { FORMATS } from './formats.js'
@@ -26,10 +25,15 @@ import { t, fmtNum, LANGS, LANG } from './i18n.js'
 import { LOGO_URL, getLogoImage } from './logo.js'
 import { getPinImage } from './pin.js'
 import { stampFor, stampSvg } from './stamp.js'
-import { nightPolygon, clockForProgress } from './daynight.js'
 import { loadBorders, countryAt, countryFeature } from './borders.js'
 import { atlasStyle } from './atlas.js'
 import { joyStyle } from './joy.js'
+import { VEHICLES, SPEEDS, vById, vehicleTransform } from './vehicles.js'
+import LiveDistance from './components/LiveDistance.jsx'
+import TourCard from './components/TourCard.jsx'
+import { useTour } from './hooks/useTour.js'
+import { useWeather, weatherEmoji, stopKey as key } from './hooks/useWeather.js'
+import { useRoadLegs, roadKey } from './hooks/useRoadLegs.js'
 
 // Harita temalari (hepsi ucretsiz, anahtar gerektirmez).
 // 'style' bir URL ya da stil nesnesi ureten async fonksiyon olabilir (Atlas).
@@ -59,49 +63,7 @@ const resolveStyle = (id) => {
   return typeof c.style === 'function' ? c.style() : Promise.resolve(c.style)
 }
 
-const VEHICLES = [
-  // faces: emojinin dogal olarak baktigi aci (ekran, kuzey=0 saat yonu)
-  // flip: yatay tasit mi? (sag yariya bakarken bas asagi olmasin diye dikey flip)
-  { id: 'plane', emoji: '✈️', label: t('vehPlane'), arc: true, rotate: true, faces: 45, flip: false },
-  { id: 'car', emoji: '🚗', label: t('vehCar'), arc: false, rotate: true, faces: -90, flip: true },
-  { id: 'train', emoji: '🚄', label: t('vehTrain'), arc: false, rotate: true, faces: -90, flip: true },
-  { id: 'ship', emoji: '🚢', label: t('vehShip'), arc: false, rotate: true, faces: -90, flip: true },
-  { id: 'bike', emoji: '🚲', label: t('vehBike'), arc: false, rotate: true, faces: -90, flip: true },
-  { id: 'balloon', emoji: '🎈', label: t('vehBalloon'), arc: true, rotate: false, faces: 0, flip: false },
-]
-const vById = (id) => VEHICLES.find((v) => v.id === id) || VEHICLES[0]
-
-// Sehir adindan 3 harfli kisaltma (harita etiketi icin).
-// Turkce karakterleri ASCII'ye indirger, ilk 3 harfi buyuk dondurur.
-// Cok kelimeli adlarda bas harfleri alir (ornegin "New York" -> "NYO" degil,
-// "New York" -> ilk kelimenin ilk 3 harfi mantikli: "NEW"). Basit ve okunakli.
-function shortLabel(name) {
-  if (!name) return '???'
-  const map = { 'ı': 'i', 'İ': 'i', 'ş': 's', 'Ş': 's', 'ğ': 'g', 'Ğ': 'g',
-    'ü': 'u', 'Ü': 'u', 'ö': 'o', 'Ö': 'o', 'ç': 'c', 'Ç': 'c' }
-  const ascii = name.replace(/[ıİşŞğĞüÜöÖçÇ]/g, (c) => map[c] || c)
-  // Yalnizca harfleri tut, ilk 3'unu al
-  const letters = ascii.replace(/[^A-Za-z]/g, '')
-  return (letters.slice(0, 3) || ascii.slice(0, 3)).toUpperCase()
-}
-
-
-// Hiz kademeleri: id = SURE carpani (kucuk carpan = kisa sure = hizli animasyon).
-// Not: eski surumde etiketler tersti (Yavas 0.5x sureyle hizlaniyordu) — duzeltildi.
-const SPEEDS = [
-  { id: 2, label: t('speedSlow') },
-  { id: 1, label: t('speedNormal') },
-  { id: 0.5, label: t('speedFast') },
-]
-
 const DWELL = 750 // duraklarda bekleme (ms)
-
-// Tanitim turunun demo rotasi (Istanbul -> Paris, hafif kuzeye bukulmus)
-const TOUR_DEMO = {
-  dep: { name: 'İstanbul', full: 'İstanbul, Türkiye', lat: 41.0082, lng: 28.9784 },
-  arr: { name: 'Paris', full: 'Paris, Fransa', lat: 48.8566, lng: 2.3522 },
-  bend: { lat: 52.4, lng: 16 },
-}
 
 // Sinematik kamera: hafif 3B egim. Seyir aninda daha egik, durakta biraz duzelir.
 const PITCH_CRUISE = 55 // seyir egimi (derece) — yol/manzara perspektifi
@@ -128,79 +90,6 @@ function setProgressFrac(map, frac) {
   if (map.getLayer('route-progress-glow')) map.setPaintProperty('route-progress-glow', 'line-gradient', g)
 }
 
-// Durak/yol onbellek anahtarlari — saf, durum tasimaz. Modul seviyesinde
-// tanimli olduklari icin her render'da yeniden yaratilmazlar.
-const key = (s) => `${s.lat.toFixed(2)},${s.lng.toFixed(2)}`
-const roadKey = (a, b, via) =>
-  `${a.lat.toFixed(3)},${a.lng.toFixed(3)}>${b.lat.toFixed(3)},${b.lng.toFixed(3)}` +
-  (via ? `|${via.lat.toFixed(3)},${via.lng.toFixed(3)}` : '')
-
-// Hava durumu kodu -> emoji (saf)
-const weatherEmoji = (code) => {
-  if (code == null) return '·'
-  if (code === 0) return '☀️'
-  if (code <= 2) return '🌤️'
-  if (code === 3) return '☁️'
-  if (code <= 48) return '🌫️'
-  if (code <= 67) return '🌧️'
-  if (code <= 77) return '🌨️'
-  if (code <= 82) return '🌦️'
-  if (code <= 99) return '⛈️'
-  return '·'
-}
-
-// Bir tasit emojisini gittigi yone dogru cevirecek CSS transform'u uretir.
-// bearing: yumusatilmis ham yon (kuzey=0, saat yonu, derece)
-// v: arac tanimi (faces = emojinin dogal acisi, flip = yatay tasit mi)
-// Yatay tasitlarda (araba/tren/gemi/bisiklet) sag yariya bakarken emoji bas
-// asagi donmesin diye dikey flip uygulanir.
-function vehicleTransform(bearing, v) {
-  if (!v.rotate) return 'rotate(0deg)'
-  let angle = bearing - v.faces
-  if (v.flip) {
-    // Ekran yonu saga dogru mu? (0..180 arasi rota = dogu bileseni pozitif)
-    const dir = ((bearing % 360) + 360) % 360
-    const goingRight = dir > 0 && dir < 180
-    if (goingRight) {
-      // Dikey flip + aciyi flip'e gore duzelt
-      return `scaleY(-1) rotate(${-(angle)}deg)`
-    }
-  }
-  return `rotate(${angle}deg)`
-}
-
-// Canli mesafe gostergesi — kendi requestAnimationFrame dongusuyle posRef'ten
-// okur ve YALNIZCA kendini render eder. Boylece animasyon boyunca butun App
-// agaci yeniden render olmaz (onceki setTraveledHz her karede App'i cizerdi).
-function LiveDistance({ posRef, totalKm, playing }) {
-  const [, force] = useState(0)
-  const rafRef = useRef(null)
-  const lastRef = useRef(0)
-
-  useEffect(() => {
-    if (!playing) return
-    const tick = (now) => {
-      // ~12fps: goze yeter, React yukunu dusuk tutar
-      if (now - lastRef.current > 80) {
-        lastRef.current = now
-        force((n) => (n + 1) & 0xffff)
-      }
-      rafRef.current = requestAnimationFrame(tick)
-    }
-    rafRef.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [playing])
-
-  const traveled = posRef.current?.traveledKm || 0
-  const remaining = Math.max(0, totalKm - traveled)
-  return (
-    <strong>
-      {fmtNum(traveled)}
-      <em> / {fmtNum(remaining)} KM</em>
-    </strong>
-  )
-}
-
 export default function App() {
   const mapContainer = useRef(null)
   const mapRef = useRef(null)
@@ -210,8 +99,10 @@ export default function App() {
   const rafRef = useRef(null)
   const posRef = useRef(null)
   const recorderRef = useRef(null)
-  const roadCacheRef = useRef({}) // "lat,lng>lat,lng" -> [{lng,lat,bearing}]
-  const [roadVersion, setRoadVersion] = useState(0) // yol gelince yeniden ciz
+  // playing state'i asenkron play() icinde bayat kaliyor (await sirasinda hala
+  // false). Senkron kilit icin ref tutulur — cift tiklamada iki animasyon
+  // dongusu baslamasin.
+  const playingRef = useRef(false)
 
   const [departure, setDeparture] = useState(null)
   const [arrival, setArrival] = useState(null)
@@ -231,17 +122,14 @@ export default function App() {
   const handleMarkersRef = useRef([]) // haritadaki tutamac marker'lari
   const [format, setFormat] = useState('landscape')
   const [speed, setSpeed] = useState(1)
-  const [loop, setLoop] = useState(false)
 
   const [saved, setSaved] = useState([])
-  const [weather, setWeather] = useState({}) // key -> {t, code} veya 'loading'
   const [toast, setToast] = useState('')
   const [dragIdx, setDragIdx] = useState(null)
   const [langOpen, setLangOpen] = useState(false) // dil secici acik mi
   const [stamps, setStamps] = useState([]) // ekranda gorunen pasaport damgalari
   const [showStamps, setShowStamps] = useState(true) // damga efekti acik mi
   const [author, setAuthor] = useState('') // video/gorsel cikisina yazilacak ad soyad
-  const [dayNight, setDayNight] = useState(false) // gunduz/gece golgesi acik mi
   const curLang = LANGS.find((l) => l.code === LANG) || LANGS[0]
 
   // Ulke sinir verisini arka planda yukle (animasyonda gecis tespiti icin)
@@ -257,15 +145,14 @@ export default function App() {
     return () => document.removeEventListener('click', close)
   }, [langOpen])
 
-  // Duraklar: baslangic + ara + varis, (loop ise sona baslangic eklenir)
-  const baseStops = useMemo(
+  // Duraklar: baslangic + ara duraklar + varis
+  const stops = useMemo(
     () => [departure, ...midStops, arrival].filter(Boolean),
     [departure, midStops, arrival]
   )
-  const stops = useMemo(() => {
-    if (loop && baseStops.length > 1) return [...baseStops, baseStops[0]]
-    return baseStops
-  }, [baseStops, loop])
+
+  // Duraklarin anlik hava durumu (TTL'li, kendi kendini tazeler)
+  const weather = useWeather(stops)
 
   // Bacak sayisi degistiginde leg araclarini senkronize et
   useEffect(() => {
@@ -281,18 +168,16 @@ export default function App() {
     (i) => vById(legVehicles[i] || vehicle.id),
     [legVehicles, vehicle]
   )
-  // Rota kavis mi? Herhangi bir bacak kavisli arac ise onizlemede kavis goster
-  const anyArc = useMemo(
-    () => stops.slice(0, -1).some((_, i) => legVeh(i).arc),
-    [stops, legVeh]
-  )
-
 
   // Saf yardimcilar — modul seviyesinde tanimli (her render'da yeniden yaratilmaz)
   const showToast = useCallback((msg) => {
     setToast(msg)
     setTimeout(() => setToast(''), 2600)
   }, [])
+
+  // Yol geometrisi: OSRM onbellegi, on-yukleme ve yeniden deneme politikasi
+  const { cacheRef: roadCacheRef, version: roadVersion, needsFetch: roadNeedsFetch, ensureLegs } =
+    useRoadLegs(stops, legVeh, shapePts)
 
   // Bir bacak icin nokta dizisi: yol araci ise OSRM cache'i, yoksa kavis/duz.
   const legPointsFor = useCallback((i) => {
@@ -305,8 +190,8 @@ export default function App() {
       if (cached) return cached // gercek yol (bukme noktasi uzerinden olabilir)
     }
     if (sp) return bendPath(from, sp, to) // kullanici buktu: Bezier
-    return buildPath([from, to], v.arc) // kus ucusu (kavisli/duz)
-  }, [stops, legVeh, shapePts])
+    return buildPath([from, to]) // kus ucusu (great-circle)
+  }, [stops, legVeh, shapePts, roadCacheRef])
 
   // NOT: legKm, legPointsFor'u kullandigi icin ondan SONRA tanimlanmali
   // (const useCallback'ten once erisim TDZ hatasiyla sayfayi bosaltir).
@@ -321,28 +206,6 @@ export default function App() {
     [stops, legPointsFor, roadVersion] // eslint-disable-line react-hooks/exhaustive-deps
   )
   const totalKm = useMemo(() => legKm.reduce((a, b) => a + b, 0), [legKm])
-
-  // Yol araclarinin bacaklarini onceden OSRM'den cek (arka planda)
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      for (let i = 0; i < stops.length - 1; i++) {
-        const v = legVeh(i)
-        if (!usesRoads(v.id)) continue
-        const sp = shapePts[i] || null
-        const k = roadKey(stops[i], stops[i + 1], sp)
-        if (roadCacheRef.current[k]) continue
-        const pts = await fetchRoadLeg(stops[i], stops[i + 1], sp)
-        if (cancelled) return
-        if (pts) {
-          roadCacheRef.current[k] = pts
-          setRoadVersion((n) => n + 1) // onizlemeyi tazele
-        }
-      }
-    })()
-    return () => { cancelled = true }
-  }, [stops, legVehicles, shapePts]) // eslint-disable-line react-hooks/exhaustive-deps
-
 
   // --- Harita kurulumu ---------------------------------------------------
   useEffect(() => {
@@ -376,22 +239,6 @@ export default function App() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function addRouteLayers(map) {
-    // Gece golgesi (gunduz/gece) — rota cizgilerinin ALTINDA kalsin diye once eklenir
-    if (!map.getSource('night')) {
-      map.addSource('night', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      })
-      map.addLayer({
-        id: 'night',
-        type: 'fill',
-        source: 'night',
-        paint: {
-          'fill-color': '#0a1230',
-          'fill-opacity': 0.42,
-        },
-      })
-    }
     if (!map.getSource('country-hl')) {
       map.addSource('country-hl', {
         type: 'geojson',
@@ -476,14 +323,6 @@ export default function App() {
     return () => { stale = true }
   }, [theme]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Gunduz/gece toggle degisince onizlemede gece golgesini guncelle
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-    if (map.isStyleLoaded()) updateNight(dayNight ? new Date() : null)
-    else map.once('styledata', () => updateNight(dayNight ? new Date() : null))
-  }, [dayNight]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // --- Durak isaretcileri + onizleme -------------------------------------
   function redrawPreview() {
     const map = mapRef.current
@@ -497,28 +336,13 @@ export default function App() {
     src.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords } })
   }
 
-  // Gece golgesini bir tarih icin guncelle (dayNight kapaliysa temizle)
-  function updateNight(date) {
-    const map = mapRef.current
-    const src = map?.getSource('night')
-    if (!src) return
-    if (!dayNight || !date) {
-      src.setData({ type: 'FeatureCollection', features: [] })
-      return
-    }
-    src.setData({ type: 'FeatureCollection', features: [nightPolygon(date)] })
-  }
-
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
     stopMarkersRef.current.forEach((m) => m.remove())
-    // loop'ta son durak baslangicla ayni; isaretciyi tekrar cizme
-    const uniqueStops = loop && stops.length > 1 ? stops.slice(0, -1) : stops
-    stopMarkersRef.current = uniqueStops.map((s, i) => {
-      const isLast = i === uniqueStops.length - 1 && uniqueStops.length > 1 && !loop
-      const tag = i === 0 ? t('tagDep') : isLast ? t('tagArr') : t('tagVia')
+    stopMarkersRef.current = stops.map((s, i) => {
+      const isLast = i === stops.length - 1 && stops.length > 1
       const el = document.createElement('div')
       el.title = s.name // tam ad: uzerine gelince ipucu (etiket yok, sade gorunum)
       if (isLast) {
@@ -542,7 +366,7 @@ export default function App() {
     } else if (stops.length === 1) {
       map.easeTo({ center: [stops[0].lng, stops[0].lat], zoom: 6, duration: 800 })
     }
-  }, [stops, loop]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stops]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Onizleme cizimi ayri efekt: OSRM yol geometrisi geldikce (roadVersion)
   // yalnizca cizgi tazelenir — kamera/fitBounds TEKRAR tetiklenmez.
@@ -551,52 +375,15 @@ export default function App() {
     if (!map) return
     if (map.isStyleLoaded()) redrawPreview()
     else map.once('load', redrawPreview)
-  }, [stops, legVehicles, loop, roadVersion]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stops, legVehicles, roadVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // --- Ilk kullanim tanitimi (tour) --------------------------------------
-  // Ilk ziyarette 6 adimlik tur: her adim panelde bir bolumu isaret eder ve
-  // HARITA da o adima tepki verir (ucus, demo rota, bukme, canli animasyon).
-  const [tourStep, setTourStep] = useState(-1) // -1 = kapali
-  const tourPlayedRef = useRef(false)
-  const TOUR_LAST = 5
-
-  useEffect(() => {
-    try { if (localStorage.getItem('rota:tourDone')) return } catch { return }
-    if (readRouteFromUrl()) return // paylasilan linkle gelen kullaniciyi bolme
-    const id = setTimeout(() => setTourStep(0), 900)
-    return () => clearTimeout(id)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  function finishTour() {
-    try { localStorage.setItem('rota:tourDone', '1') } catch { /* gizli mod vb. */ }
-    resetAnimation()
-    clearAll()
-    setTourStep(-1)
-    mapRef.current?.easeTo({ center: [29, 41], zoom: 3.2, pitch: 0, duration: 1200 })
-  }
-
-  useEffect(() => {
-    if (tourStep < 0) return
-    const map = mapRef.current
-    // Adim basina harita/durum degisikligi — kullanici anlatilan seyi CANLI gorur
-    if (tourStep === 0) {
-      map?.flyTo({ center: [20, 30], zoom: 1.7, pitch: 0, duration: 2400 })
-    } else if (tourStep === 1) {
-      setDeparture(TOUR_DEMO.dep) // harita Istanbul'a ucar (mevcut efekt)
-    } else if (tourStep === 2) {
-      setArrival(TOUR_DEMO.arr) // rota cizilir, kamera rotaya oturur
-    } else if (tourStep === 3) {
-      setShapePts({ 0: TOUR_DEMO.bend }) // cizgi bukulur
-      map?.easeTo({ pitch: 32, duration: 900 })
-    } else if (tourStep === 4) {
-      map?.easeTo({ pitch: 0, duration: 700 })
-    } else if (tourStep === 5) {
-      if (!tourPlayedRef.current) {
-        tourPlayedRef.current = true
-        play(false) // demo animasyon kendiliginden baslar
-      }
-    }
-  }, [tourStep]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Ilk kullanim tanitimi (demo rota + adim adim harita hareketleri)
+  const tour = useTour({
+    mapRef, departure, arrival, midStops,
+    setDeparture, setArrival, setShapePts,
+    resetAnimation, clearAll, play,
+  })
+  const tourStep = tour.step
 
   // --- Rota bukme tutamaclari --------------------------------------------
   // Her bacagin ortasinda surukleneb ilir kucuk bir nokta: kullanici onu
@@ -653,14 +440,14 @@ export default function App() {
       handleMarkersRef.current.forEach((m) => m.remove())
       handleMarkersRef.current = []
     }
-  }, [stops, legVehicles, shapePts, roadVersion, playing, loop]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stops, legVehicles, shapePts, roadVersion, playing]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Durak sayisi/dongu degisince bacak index'leri kayar — bukmeler sifirlanir.
   // applyState (paylasilan/kayitli rota) yuklerken bayrakla korunur.
   useEffect(() => {
     if (hydratingRef.current) return
     setShapePts({})
-  }, [stops.length, loop]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stops.length])  
 
   // --- URL'den rota yukleme (ilk acilis) ---------------------------------
   useEffect(() => {
@@ -680,39 +467,9 @@ export default function App() {
     setMidStops(r.stops.slice(1, -1))
     setLegVehicles(r.legVehicles || [])
     setTheme(themeCfg(r.theme).id)
-    setLoop(!!r.loop)
     setSpeed(r.speed || 1)
     setCamera(r.camera === 'fixed' ? 'fixed' : 'follow')
   }
-
-  // --- Hava durumu (Open-Meteo, anahtarsiz) ------------------------------
-  // Istenen anahtarlar ref'te tutulur: efekt icindeki `weather` degeri bayat
-  // olabilecegi icin ayni durak icin cift istek atilmasini onler.
-  const weatherReqRef = useRef(new Set())
-  useEffect(() => {
-    const uniqueStops = loop && stops.length > 1 ? stops.slice(0, -1) : stops
-    uniqueStops.forEach((s) => {
-      const k = key(s)
-      if (weatherReqRef.current.has(k)) return
-      weatherReqRef.current.add(k)
-      setWeather((w) => ({ ...w, [k]: 'loading' }))
-      fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${s.lat}&longitude=${s.lng}&current=temperature_2m,weather_code`
-      )
-        .then((r) => r.json())
-        .then((d) => {
-          const c = d.current
-          setWeather((w) => ({
-            ...w,
-            [k]: c ? { t: Math.round(c.temperature_2m), code: c.weather_code } : null,
-          }))
-        })
-        .catch(() => {
-          weatherReqRef.current.delete(k) // ag hatasi: sonraki eklemede tekrar dene
-          setWeather((w) => ({ ...w, [k]: null }))
-        })
-    })
-  }, [stops, loop]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Animasyon kontrol -------------------------------------------------
   function resetAnimation() {
@@ -720,6 +477,7 @@ export default function App() {
     recorderRef.current?.stop()
     recorderRef.current = null
     posRef.current = null
+    playingRef.current = false
     setPlaying(false)
     setCurrentLeg(-1)
     setStamps([]) // ekrandaki damgalari temizle
@@ -734,7 +492,6 @@ export default function App() {
         m.getSource('country-hl')?.setData({ type: 'FeatureCollection', features: [] })
       }
     }
-    updateNight(null) // gece golgesini temizle
     vehicleMarkerRef.current?.remove()
     vehicleMarkerRef.current = null
     ringMarkerRef.current?.remove()
@@ -751,7 +508,6 @@ export default function App() {
     setArrival(null)
     setMidStops([])
     setAddingMid(false)
-    setLoop(false)
   }
 
   function popPin(index, cls = 'arrived') {
@@ -849,18 +605,18 @@ export default function App() {
     // Ayni damga (ayni ulke) tekrar geldiginde cache'ten al — her varista
     // yeniden base64/decode maliyeti odenmez.
     const cache = stampImgCacheRef.current
-    const useImg = (img) => {
+    const applyStampImage = (img) => {
       stampRef.current = { id, img, born: performance.now(), rotate: data.rotate, left, top }
     }
     if (cache[svg]?.complete) {
-      useImg(cache[svg])
+      applyStampImage(cache[svg])
     } else {
       const img = cache[svg] || new Image()
       cache[svg] = img
       if (img.complete && img.src) {
-        useImg(img)
+        applyStampImage(img)
       } else {
-        img.onload = () => useImg(img)
+        img.onload = () => applyStampImage(img)
         img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)))
       }
     }
@@ -874,24 +630,19 @@ export default function App() {
 
   async function play(record = false) {
     const map = mapRef.current
-    if (!map || stops.length < 2 || playing) return
-    resetAnimation()
+    // playing state'i await sirasinda bayat kaliyor; senkron ref ile kilitle
+    if (!map || stops.length < 2 || playingRef.current) return
+    resetAnimation() // senkron; kilidi hemen ardindan kur
+    playingRef.current = true
 
     // Yol araclarinin eksik bacaklarini animasyondan once cek
     const needRoads = stops.slice(0, -1).some((_, i) =>
-      usesRoads(legVeh(i).id) && !roadCacheRef.current[roadKey(stops[i], stops[i + 1], shapePts[i] || null)]
+      usesRoads(legVeh(i).id) &&
+      roadNeedsFetch(roadKey(stops[i], stops[i + 1], shapePts[i] || null))
     )
     if (needRoads) {
       showToast(t('toastFetchingRoads'))
-      for (let i = 0; i < stops.length - 1; i++) {
-        if (!usesRoads(legVeh(i).id)) continue
-        const sp = shapePts[i] || null
-        const k = roadKey(stops[i], stops[i + 1], sp)
-        if (roadCacheRef.current[k]) continue
-        const pts = await fetchRoadLeg(stops[i], stops[i + 1], sp)
-        if (pts) roadCacheRef.current[k] = pts
-      }
-      setRoadVersion((n) => n + 1)
+      await ensureLegs()
     }
 
     const legs = []
@@ -1002,13 +753,6 @@ export default function App() {
     lastCountryRef.current = countryAt(legs[0].coords[0][0], legs[0].coords[0][1])
     let borderThrottle = 0
 
-    // Gunduz/gece icin: toplam animasyon suresi + baslangic saati (simdi)
-    const totalDur =
-      legs.reduce((a, l) => a + l.duration, 0) + DWELL * Math.max(0, legs.length - 1)
-    const nightBase = new Date()
-    let nightThrottle = 0
-    if (dayNight) updateNight(nightBase) // baslangic golgesi
-
     const frame = (now) => {
       const elapsed = Math.max(0, now - start)
 
@@ -1082,14 +826,6 @@ export default function App() {
       // okunur; burada React state'i guncellemiyoruz (App yeniden render olmaz).
       const done_km = prefixKm[legIdx] + leg.km * tE
 
-      // Gunduz/gece golgesi: ilerlemeye gore sanal saat kaydir (~5fps, poligon pahali)
-      if (dayNight && now - nightThrottle > 200) {
-        nightThrottle = now
-        const progress = Math.min(1, elapsed / totalDur)
-        // Tum yolculuk boyunca ~1 gun (24s) gecsin ki golge belirgin kaysin
-        updateNight(clockForProgress(nightBase, progress, 24))
-      }
-
       if (leg.vehicle.rotate) {
         const diff = ((p.bearing - bearing + 540) % 360) - 180
         bearing += diff * 0.12
@@ -1138,6 +874,7 @@ export default function App() {
         celebrate([last.lng, last.lat])
         dropStamp(last) // son varis damgasi
         setRing(null)
+        playingRef.current = false
         setPlaying(false)
         setCurrentLeg(stops.length - 1)
         el.classList.add('landed')
@@ -1170,15 +907,7 @@ export default function App() {
   async function handleImage() {
     const map = mapRef.current
     if (!map || stops.length < 2) return
-    // Yol araclarinin eksik bacaklarini once cek
-    for (let i = 0; i < stops.length - 1; i++) {
-      if (!usesRoads(legVeh(i).id)) continue
-      const sp = shapePts[i] || null
-      const k = roadKey(stops[i], stops[i + 1], sp)
-      if (roadCacheRef.current[k]) continue
-      const pts = await fetchRoadLeg(stops[i], stops[i + 1], sp)
-      if (pts) roadCacheRef.current[k] = pts
-    }
+    await ensureLegs() // eksik yol bacaklarini once cek
     const full = []
     let realTotal = 0
     for (let i = 0; i < stops.length - 1; i++) {
@@ -1200,11 +929,11 @@ export default function App() {
 
   // --- Paylasim & kaydetme ----------------------------------------------
   function currentState() {
-    return { stops: baseStops, legVehicles, theme, loop, speed, camera, shapePts }
+    return { stops, legVehicles, theme, speed, camera, shapePts }
   }
 
   async function handleShare() {
-    if (baseStops.length < 2) return
+    if (stops.length < 2) return
     const url = shareUrl(currentState())
     try {
       await navigator.clipboard.writeText(url)
@@ -1215,8 +944,8 @@ export default function App() {
   }
 
   function handleSave() {
-    if (baseStops.length < 2) return
-    const def = `${baseStops[0].name} → ${baseStops[baseStops.length - 1].name}`
+    if (stops.length < 2) return
+    const def = `${stops[0].name} → ${stops[stops.length - 1].name}`
     const name = window.prompt(t('routeNamePrompt'), def)
     if (name === null) return
     saveRoute(name, currentState())
@@ -1250,7 +979,6 @@ export default function App() {
   }
 
   const routeReady = departure && arrival
-  const uniqueStops = loop && stops.length > 1 ? stops.slice(0, -1) : stops
 
   return (
     <div className="app">
@@ -1353,7 +1081,7 @@ export default function App() {
         </div>
 
         {/* Pasaport damgasi efekti */}
-        {baseStops.length > 1 && (
+        {stops.length > 1 && (
           <label className="toggle">
             <input type="checkbox" checked={showStamps} disabled={playing}
               onChange={(e) => setShowStamps(e.target.checked)} />
@@ -1382,7 +1110,7 @@ export default function App() {
           <ul className="board-rows">
             {stops.map((s, i) => {
               const isLastUnique = i === stops.length - 1
-              const tag = i === 0 ? t('tagDep') : (isLastUnique && !loop) ? t('tagArr') : (loop && isLastUnique) ? t('tagDep') : t('tagVia')
+              const tag = i === 0 ? t('tagDep') : isLastUnique ? t('tagArr') : t('tagVia')
               const state = !playing ? '' : i < currentLeg ? 'passed' : i === currentLeg ? 'active' : ''
               const w = weather[key(s)]
               return (
@@ -1480,8 +1208,8 @@ export default function App() {
           <div className="opt">
             <span className="opt-label">{t('mapLabel')}</span>
             <div className="seg">
-              {Object.values(THEMES).map((t) => (
-                <button key={t.id} className={theme === t.id ? 'on' : ''} disabled={playing} onClick={() => setTheme(t.id)}>{t.label}</button>
+              {Object.values(THEMES).map((th) => (
+                <button key={th.id} className={theme === th.id ? 'on' : ''} disabled={playing} onClick={() => setTheme(th.id)}>{th.label}</button>
               ))}
             </div>
           </div>
@@ -1540,35 +1268,22 @@ export default function App() {
         <footer className="credits">{t('credits')}</footer>
       </aside>
 
-      <div ref={mapContainer} className="map" />
-      {stamps.map((s) => (
-        <div
-          key={s.id}
-          className="passport-stamp"
-          style={{ left: `${s.left}%`, top: `${s.top}%`, '--stamp-rot': `${s.rotate}deg` }}
-          dangerouslySetInnerHTML={{ __html: s.svg }}
-        />
-      ))}
-      {tourStep >= 0 && (
-        <div className="tour-card">
-          <div className="tour-title">{t(`tourT${tourStep}`)}</div>
-          <div className="tour-body">{t(`tourB${tourStep}`)}</div>
-          <div className="tour-foot">
-            <button className="tour-skip" onClick={finishTour}>{t('tourSkip')}</button>
-            <div className="tour-dots">
-              {Array.from({ length: TOUR_LAST + 1 }).map((_, i) => (
-                <span key={i} className={i === tourStep ? 'on' : ''} />
-              ))}
-            </div>
-            <button
-              className="tour-next"
-              onClick={() => (tourStep >= TOUR_LAST ? finishTour() : setTourStep(tourStep + 1))}
-            >
-              {tourStep >= TOUR_LAST ? t('tourDone') : t('tourNext')}
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Damgalar haritanin USTUNDE konumlanmali: yuzde degerleri harita
+          alanina gore olculur. Eskiden .app'e (360px panel dahil) goreydi,
+          bu yuzden ekrandaki damga video/PNG ciktisindakinden farkli yere
+          dusuyordu; mobilde panelin uzerine tasabiliyordu. */}
+      <div className="map-wrap">
+        <div ref={mapContainer} className="map" />
+        {stamps.map((s) => (
+          <div
+            key={s.id}
+            className="passport-stamp"
+            style={{ left: `${s.left}%`, top: `${s.top}%`, '--stamp-rot': `${s.rotate}deg` }}
+            dangerouslySetInnerHTML={{ __html: s.svg }}
+          />
+        ))}
+      </div>
+      <TourCard step={tourStep} onNext={tour.next} onSkip={tour.finish} />
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
