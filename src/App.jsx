@@ -41,7 +41,7 @@ const THEMES = {
   joy: {
     id: 'joy',
     label: t('themeJoy'),
-    style: joyStyle, // canli cizgi film: mavi deniz + yesil kara (varsayilan)
+    style: joyStyle, // editoryal kagit: sicak zemin + fume teal deniz (varsayilan)
   },
   atlas: {
     id: 'atlas',

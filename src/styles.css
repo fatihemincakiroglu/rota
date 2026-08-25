@@ -899,3 +899,36 @@ input:focus-visible {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,91,0.55); }
   50% { box-shadow: 0 0 0 6px rgba(255,107,91,0); }
 }
+
+/* --- Harita atfi -------------------------------------------------------
+   CARTO ve OpenStreetMap atfi YASAL ZORUNLULUK (OSM verisi ODbL lisansli,
+   CARTO kullanim sartlari da atif istiyor) — kaldirilamaz. Ama gorsel olarak
+   geri cekilebilir: kucuk punto, yumusak murekkep, yari saydam kagit zemin.
+   Uzerine gelince tam okunur hale gelir. */
+.maplibregl-ctrl-attrib {
+  background: rgba(248, 244, 236, 0.72) !important;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 1.5;
+  backdrop-filter: blur(6px);
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+
+.maplibregl-ctrl-attrib:hover {
+  opacity: 1;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: #6b6354;
+  text-decoration: none;
+}
+
+.maplibregl-ctrl-attrib-button {
+  opacity: 0.6;
+}
+
+/* Video/PNG cikisi yalnizca haritanin canvas'ini kopyalar; bu kontrol DOM
+   katmaninda oldugu icin ciktiya girmez. Atif orada da zorunlu oldugundan
+   capture.js kendi satirini cizer (bkz. drawAttribution). */
+.maplibregl-ctrl-bottom-right { z-index: 5; }

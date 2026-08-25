@@ -225,6 +225,31 @@ function drawTotalLabel(ctx, map, L, stops, totalKm) {
   ctx.fillText(text, x, by + bh / 2 + 0.5 * k)
 }
 
+// Sag alt kose: harita verisi atfi.
+// Ekrandaki MapLibre atif kontrolu DOM katmanindadir, canvas kopyasina
+// girmez — yani atif olmadan disa aktarilan her video/PNG lisans ihlali
+// olurdu (OSM verisi ODbL, CARTO kullanim sartlari atif sart kosuyor).
+// Bu yuzden ciktiya kendimiz yaziyoruz.
+const ATTRIB_TEXT = '© CARTO © OpenStreetMap'
+function drawAttribution(ctx, L) {
+  const k = L.k
+  ctx.save()
+  ctx.font = `500 ${10 * k}px "IBM Plex Mono", monospace`
+  ctx.textAlign = 'right'
+  ctx.textBaseline = 'bottom'
+  const pad = 10 * k
+  const x = L.outW - pad
+  const y = L.outH - pad
+  const w = ctx.measureText(ATTRIB_TEXT).width
+  // Koyu harita ustunde de okunsun diye ince bir kagit zemin
+  roundRect(ctx, x - w - 8 * k, y - 15 * k, w + 16 * k, 18 * k, 6 * k)
+  ctx.fillStyle = 'rgba(248,244,236,0.7)'
+  ctx.fill()
+  ctx.fillStyle = 'rgba(94,86,71,0.9)'
+  ctx.fillText(ATTRIB_TEXT, x, y)
+  ctx.restore()
+}
+
 // Sol ust kose: MapBoast logosu + toplam mesafe (+ istege bagli alt bilgi)
 function drawBadge(ctx, L, totalKm, subtitle, author = '') {
   const k = L.k
@@ -337,6 +362,7 @@ export async function downloadImage(map, stops, totalKm, formatId = 'landscape',
   L.drawMap(ctx)
   drawOverlays(ctx, map, L, stops, null)
   drawBadge(ctx, L, totalKm, subtitle, author)
+  drawAttribution(ctx, L)
   drawTotalLabel(ctx, map, L, stops, totalKm)
   const suffix = formatId === 'landscape' ? '' : `-${FORMATS[formatId].label.replace(':', 'x')}`
   out.toBlob((b) => b && saveBlob(b, `mapboast${suffix}.png`), 'image/png')
@@ -392,6 +418,7 @@ export function startRecorder(map, stops, posRef, totalKm, formatId = 'landscape
     }
     // Aktif pasaport damgasi (varista dusen) — ekrandaki DOM ile ayni his
     if (stampRef?.current?.img) drawStamp(ctx, L, stampRef.current)
+    drawAttribution(ctx, L) // her karede — en ustte kalsin
     requestAnimationFrame(copy)
   }
   recorder.start(200)
