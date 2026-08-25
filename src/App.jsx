@@ -1166,8 +1166,12 @@ export default function App() {
           </ul>
         </div>
 
-        {/* Bacak detaylari: arac secimi + mesafe + sure + saat farki */}
-        {stops.length > 1 && (
+        {/* Bacak detaylari: arac secimi + mesafe + sure + saat farki.
+            Tek bacakta bu kutunun ici "Varsayilan arac" ve "Toplam mesafe"
+            ile birebir tekrar ederdi; yalnizca bacak basina FARKLI arac
+            secilebildiginde (2+ bacak) gosteriliyor. Tek bacakta kaybolan
+            sure ve saat farki mesafe satirina tasindi. */}
+        {stops.length > 2 && (
           <div className="legs">
             <div className="legs-head">{t('legs')}</div>
             {stops.slice(0, -1).map((s, i) => {
@@ -1212,13 +1216,27 @@ export default function App() {
             {playing ? (
               <LiveDistance posRef={posRef} totalKm={totalKm} playing={playing} />
             ) : (
-              <strong>{fmtNum(totalKm)} KM</strong>
+              <strong>
+                {fmtNum(totalKm)} KM
+                {stops.length === 2 && (
+                  <em className="distance-sub">
+                    {' · '}{etaText(totalKm, legVeh(0).id)}
+                    {hourDiff(stops[0], stops[1]) !== 0 && (
+                      <> · {hourDiff(stops[0], stops[1]) > 0 ? '+' : '−'}
+                        {Math.abs(hourDiff(stops[0], stops[1]))}{t('hourSuffix')}</>
+                    )}
+                  </em>
+                )}
+              </strong>
             )}
           </div>
         )}
 
         {/* Varsayilan arac (yeni bacaklara uygulanir) */}
-        <div className="section-label">{t('defaultVehicle')}</div>
+        {/* Bacak basina secim gorunmuyorken "varsayilan" demek anlamsiz */}
+        <div className="section-label">
+          {stops.length > 2 ? t('defaultVehicle') : t('vehicleLabel')}
+        </div>
         <div className={`vehicles ${tourStep === 4 ? 'tour-hl' : ''}`}>
           {VEHICLES.map((v) => (
             <button
