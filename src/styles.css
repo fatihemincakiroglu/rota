@@ -33,11 +33,19 @@ html, body, #root {
   position: relative;
   min-width: 0;
   min-height: 0;
+  display: flex;
 }
 
+/* DIKKAT: .map'e position/inset VERME. MapLibre konteynere kendi
+   .maplibregl-map kuralini uygular (position: relative; overflow: hidden) ve
+   ayni ozgullukte olup sonra yuklendigi icin bizim position'imizi ezer.
+   O zaman inset:0 etkisiz kalir, yukseklik 0'a coker (canvas mutlak konumlu)
+   ve overflow:hidden haritayi tamamen kirpar — ekran bombos gorunur.
+   Bu yuzden boyut flex ile verilir; konumlandirmayla yarisilmaz. */
 .map {
-  position: absolute;
-  inset: 0;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
 }
 
 .panel {
