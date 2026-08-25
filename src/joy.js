@@ -8,6 +8,8 @@
 // tonal araligi paylastigi icin aksanlarla yarisiyor, harita da cizgi film
 // gibi duruyordu.
 
+import { makeStyleLoader } from './styleCache.js'
+
 const BASE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
 
 const P = {
@@ -78,17 +80,4 @@ function transform(style) {
   return style
 }
 
-let cached = null
-let inflight = null
-export function joyStyle() {
-  if (cached) return Promise.resolve(cached)
-  if (inflight) return inflight
-  inflight = fetch(BASE)
-    .then((r) => r.json())
-    .then((json) => { cached = transform(json); return cached })
-    .catch(() => {
-      inflight = null
-      return BASE // ag hatasi: duz stile dus, harita bos kalmasin
-    })
-  return inflight
-}
+export const joyStyle = makeStyleLoader(BASE, transform)

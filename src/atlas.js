@@ -5,6 +5,8 @@
 //   * AWS acik yukseklik verisiyle KABARTMA (hillshade) — daglara derinlik
 // Ucretsiz, API anahtari gerektirmez. Sonuc onbelleklenir (tema gecisi hizli).
 
+import { makeStyleLoader } from './styleCache.js'
+
 const BASE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
 
 // AWS Terrain Tiles (acik veri, anahtarsiz) — terrarium kodlamali DEM
@@ -92,18 +94,4 @@ function transform(style) {
   return style
 }
 
-let cached = null
-let inflight = null
-export function atlasStyle() {
-  if (cached) return Promise.resolve(cached)
-  if (inflight) return inflight
-  inflight = fetch(BASE)
-    .then((r) => r.json())
-    .then((json) => { cached = transform(json); return cached })
-    .catch(() => {
-      // Ag hatasi: donusum yapilamazsa duz Positron URL'ine dus — harita bos kalmasin
-      inflight = null
-      return BASE
-    })
-  return inflight
-}
+export const atlasStyle = makeStyleLoader(BASE, transform)

@@ -227,8 +227,15 @@ export default function App() {
         attributionControl: { compact: true },
       })
       mapRef.current = map
+      // Sessiz basarisizlik olmasin: stil/karo hatasi konsola dussun
+      map.on('error', (e) => console.error('[harita]', e?.error?.message || e))
       map.on('load', () => addRouteLayers(map))
-    })()
+    })().catch((err) => {
+      // Buraya dusmek harita HIC olusturulamadi demektir — kullaniciyi bos
+      // bir panelle birakma, en azindan neden oldugunu bildir.
+      console.error('[harita kurulumu]', err)
+      if (!disposed) showToast(t('toastMapFailed'))
+    })
 
     return () => {
       disposed = true
@@ -315,7 +322,9 @@ export default function App() {
     resolveStyle(theme).then((style) => {
       if (stale || !mapRef.current) return
       map.setStyle(style)
-      map.once('styledata', () => {
+      // 'styledata' stil tam oturmadan ve her kaynak yuklemesinde tetikleniyor;
+      // 'style.load' ise stil TAMAMEN uygulandiktan sonra bir kez tetiklenir.
+      map.once('style.load', () => {
         addRouteLayers(map)
         redrawPreview()
       })
@@ -374,7 +383,9 @@ export default function App() {
     const map = mapRef.current
     if (!map) return
     if (map.isStyleLoaded()) redrawPreview()
-    else map.once('load', redrawPreview)
+    // 'load' haritanin omrunde yalnizca BIR KEZ tetiklenir; stil degisimi
+    // sirasinda buraya dusersek o callback bir daha hic calismazdi.
+    else map.once('style.load', redrawPreview)
   }, [stops, legVehicles, roadVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ilk kullanim tanitimi (demo rota + adim adim harita hareketleri)
