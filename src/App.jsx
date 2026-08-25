@@ -239,7 +239,12 @@ export default function App() {
       mapRef.current = map
       // Sessiz basarisizlik olmasin: stil/katman hatasi konsola dussun
       map.on('error', (e) => console.error('[harita]', e?.error?.message || e))
-      map.on('load', () => addRouteLayers(map))
+      // 'load' haritanin omrunde YALNIZCA BIR KEZ ve tum kaynaklar yuklendikten
+      // sonra tetiklenir; tetiklenmezse rota katmanlari hic eklenmez ve tum
+      // ciziim cagrilari (?. / getLayer korumali) SESSIZCE hicbir sey yapmaz —
+      // DOM isaretcileri calistigi icin sorun uzun sure fark edilmez.
+      // 'style.load' hem ilk yuklemede hem her setStyle'da guvenilir tetiklenir.
+      map.on('style.load', () => addRouteLayers(map))
     })().catch((err) => {
       // Buraya dusmek harita HIC olusturulamadi demektir — kullaniciyi bos
       // bir panelle birakma, en azindan neden oldugunu bildir.
@@ -256,6 +261,16 @@ export default function App() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function addRouteLayers(map) {
+    try {
+      addRouteLayersInner(map)
+    } catch (err) {
+      // Katman ekleme patlarsa rota cizgisi hic gorunmez ama uygulama calisir
+      // gibi durur. Sessiz kalmasin.
+      console.error('[harita] rota katmanlari eklenemedi:', err)
+    }
+  }
+
+  function addRouteLayersInner(map) {
     if (!map.getSource('country-hl')) {
       map.addSource('country-hl', {
         type: 'geojson',
@@ -696,6 +711,7 @@ export default function App() {
     vehicleMarkerRef.current = marker
     setTimeout(() => el.classList.remove('takeoff'), 900)
 
+    addRouteLayers(map) // stil olayi kacmis olabilir; katmanlar hazir olsun
     const src = map.getSource('route-progress')
     setPlaying(true)
     setCurrentLeg(0)
