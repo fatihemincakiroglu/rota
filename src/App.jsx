@@ -113,7 +113,7 @@ export default function App() {
   const [playing, setPlaying] = useState(false)
   const [currentLeg, setCurrentLeg] = useState(-1)
 
-  const [theme, setTheme] = useState('joy')
+  const [theme, setTheme] = useState('dark') // GECICI TESHIS: duz CARTO stili, transform()'dan gecmez
   const [camera, setCamera] = useState('follow') // 'follow' (sinematik) | 'fixed' (sabit, en akici)
   // Rota bukme noktalari: bacak index'i -> {lat,lng}. Kullanici bacagin
   // ortasindaki tutamaci surukleyerek rotanin yonunu sekillendirir.
@@ -227,8 +227,23 @@ export default function App() {
         attributionControl: { compact: true },
       })
       mapRef.current = map
+      window.__map = map // gecici teshis: konsoldan harita durumunu okumak icin
       // Sessiz basarisizlik olmasin: stil/karo hatasi konsola dussun
       map.on('error', (e) => console.error('[harita]', e?.error?.message || e))
+      map.on('style.load', () => {
+        const st = map.getStyle()
+        console.log('[harita] stil yuklendi', {
+          katman: st.layers.length,
+          gorunur: st.layers.filter((l) => l.layout?.visibility !== 'none').length,
+          kaynak: Object.keys(st.sources),
+          zoom: map.getZoom(),
+          canvasCSS: [map.getCanvas().clientWidth, map.getCanvas().clientHeight],
+          transform: [Math.round(map.transform.width), Math.round(map.transform.height)],
+        })
+      })
+      map.on('sourcedata', (e) => {
+        if (e.sourceId && e.isSourceLoaded) console.log('[harita] kaynak hazir:', e.sourceId)
+      })
       map.on('load', () => addRouteLayers(map))
     })().catch((err) => {
       // Buraya dusmek harita HIC olusturulamadi demektir — kullaniciyi bos
