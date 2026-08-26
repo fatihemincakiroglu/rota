@@ -12,7 +12,7 @@ import {
   usesRoads,
   bendPath,
 } from './geo.js'
-import { FORMATS } from './formats.js'
+import { FORMATS, aspectOf } from './formats.js'
 import {
   shareUrl,
   readRouteFromUrl,
@@ -121,6 +121,27 @@ export default function App() {
   const hydratingRef = useRef(false) // paylasilan rota yuklenirken bukmeler silinmesin
   const handleMarkersRef = useRef([]) // haritadaki tutamac marker'lari
   const [format, setFormat] = useState('landscape')
+  const mapWrapRef = useRef(null)
+
+  // Cikti formatinin en-boy oranini haritaya uygula (veya kaldir) ve
+  // MapLibre'nin yeni boyutu olcmesini bekle. Bir sonraki karede olcmezse
+  // fitBounds eski boyuta gore hesaplar ve kadraj yine kayar.
+  const applyShotFrame = useCallback(async (formatId) => {
+    const wrap = mapWrapRef.current
+    const map = mapRef.current
+    if (!wrap || !map) return
+    const aspect = aspectOf(formatId)
+    if (aspect) {
+      wrap.style.setProperty('--shot-aspect', String(aspect))
+      wrap.classList.add('framing')
+    } else {
+      wrap.classList.remove('framing')
+      wrap.style.removeProperty('--shot-aspect')
+    }
+    map.resize()
+    // Duzen ve resize'in oturmasi icin iki kare bekle
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  }, [])
   const [speed, setSpeed] = useState(1)
 
   const [saved, setSaved] = useState([])
@@ -512,6 +533,7 @@ export default function App() {
     cancelAnimationFrame(rafRef.current)
     recorderRef.current?.stop()
     recorderRef.current = null
+    applyShotFrame('landscape') // kayit kadrajini kaldir
     posRef.current = null
     playingRef.current = false
     setPlaying(false)
@@ -757,6 +779,9 @@ export default function App() {
       done: false,
     }
     if (record) {
+      // Kadraj kameradan ONCE kurulmali: fitBounds harita boyutuna gore
+      // hesapladigi icin once oran degismeli, sonra rota cerceveye oturmali.
+      await applyShotFrame(format)
       const sub = `${stops[0].name} → ${stops[stops.length - 1].name}`
       // capture.js tembel yuklenir — sadece video/PNG cikisi istendiginde
       const { startRecorder } = await import('./capture.js')
@@ -958,6 +983,7 @@ export default function App() {
     setProgressFrac(map, 1) // onceki animasyondan kalan esik cizgiyi kirpmasin
     const b = new maplibregl.LngLatBounds()
     stops.forEach((s) => b.extend([s.lng, s.lat]))
+    await applyShotFrame(format) // fitBounds'tan once oran otursun
     map.fitBounds(b, { padding: 110, duration: 0 })
     const sub = `${stops[0].name} → ${stops[stops.length - 1].name}`
     const { downloadImage } = await import('./capture.js')
@@ -1327,7 +1353,7 @@ export default function App() {
           alanina gore olculur. Eskiden .app'e (360px panel dahil) goreydi,
           bu yuzden ekrandaki damga video/PNG ciktisindakinden farkli yere
           dusuyordu; mobilde panelin uzerine tasabiliyordu. */}
-      <div className="map-wrap">
+      <div className="map-wrap" ref={mapWrapRef}>
         <div ref={mapContainer} className="map" />
         {stamps.map((s) => (
           <div

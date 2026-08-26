@@ -31,7 +31,10 @@ function layoutFor(map, format) {
 
   const outW = format.w
   const outH = format.h
-  // cover: harita ciktiyi doldursun, tasan kisim kirpilsin
+  // Harita kayit sirasinda hedef en-boy oranina sokuldugu icin (App:
+  // applyShotFrame) cover ile contain artik ayni sonucu verir: kirpma yok,
+  // buyutme yok. Oran yine de tam tutmazsa (ornegin cok dar pencere)
+  // cover'a duseriz, o zaman da eskisi gibi kenarlardan kirpilir.
   const scale = Math.max(outW / sw, outH / sh)
   const dw = sw * scale
   const dh = sh * scale

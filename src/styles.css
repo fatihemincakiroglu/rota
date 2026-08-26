@@ -949,3 +949,23 @@ input:focus-visible {
   opacity: 0.7;
   letter-spacing: 0;
 }
+
+/* --- Dikey/kare cikti kadraji ------------------------------------------
+   Kayit ve gorsel alirken harita hedef en-boy oranina sokulur; boylece
+   cikti canvas'in ortasindan kirpilmaz (kalkis/varis kadraj disinda
+   kalmaz) ve olceklenmedigi icin bulanmaz. Kalan alan karartilarak
+   kullaniciya "kaydedilen bolge burasi" geri bildirimi verilir. */
+.map-wrap.framing {
+  align-items: center;
+  justify-content: center;
+  background: #2a2622;
+}
+
+.map-wrap.framing .map {
+  flex: 0 0 auto;
+  aspect-ratio: var(--shot-aspect);
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 18px 50px rgba(0, 0, 0, 0.35);
+}
