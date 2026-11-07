@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
+
+// maplibre-gl v6: worker ayri bir modul; Vite'in paketledigi adresi bildiriyoruz.
+maplibregl.setWorkerUrl(maplibreWorkerUrl)
 import SearchBox from './SearchBox.jsx'
 import {
   buildPath,
